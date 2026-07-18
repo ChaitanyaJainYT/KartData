@@ -1,0 +1,251 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>GoPro HERO11 - High Precision Extractor</title>
+    <script src="https://cdn.jsdelivr.net/npm/mp4box@0.5.2/dist/mp4box.all.min.js"></script>
+    <style>
+        body { font-family: 'Segoe UI', sans-serif; background: #f0f2f7; padding: 40px; display: flex; justify-content: center; }
+        .card { background: white; padding: 30px; border-radius: 12px; box-shadow: 0 4px 20px rgba(0,0,0,0.1); width: 100%; max-width: 900px; }
+        .upload-zone { border: 2px dashed #b3bac5; padding: 40px; text-align: center; border-radius: 8px; cursor: pointer; background: #fafbfc; }
+        #status { margin-top: 20px; font-family: monospace; font-size: 13px; background: #f4f4f4; padding: 15px; border-radius: 6px; max-height: 200px; overflow-y: auto; }
+        .progress-bar { height: 8px; width: 0%; background: #0052cc; margin-top: 10px; border-radius: 4px; }
+        button { background: #0052cc; color: white; border: none; padding: 12px 24px; border-radius: 6px; cursor: pointer; font-weight: bold; margin-top: 20px; }
+    </style>
+</head>
+<body>
+
+<div class="card">
+    <h2>GoPro Full Telemetry</h2>
+    <p>Extracts and merges all sensors (GPS9, ACCL, GYRO, GRAV, CORI) into a single row-per-timestamp format.</p>
+    
+    <div class="upload-zone" id="dropZone">
+        <p>Drop GoPro MP4 here to extract all sensor data</p>
+        <input type="file" id="fileInput" accept="video/mp4" style="display:none">
+    </div>
+    <div class="progress-bar" id="progress"></div>
+    <div id="status">Ready...</div>
+    <button id="dlBtn" style="display:none">Download Combined CSV</button>
+</div>
+
+<script>
+    const fileInput = document.getElementById('fileInput');
+    const dropZone = document.getElementById('dropZone');
+    const status = document.getElementById('status');
+    const progress = document.getElementById('progress');
+    const dlBtn = document.getElementById('dlBtn');
+
+    // Separate storage for each sensor to prevent collisions
+    let sensors = {
+        ACCL: [], GYRO: [], GPS9: [], GRAV: [], CORI: []
+    };
+    let selectedFileName = "GX000"; // Default name
+
+    dropZone.onclick = () => fileInput.click();
+
+    fileInput.onchange = async (e) => {
+        const file = e.target.files[0];
+        if (!file) return;
+
+        selectedFileName = file.name.replace(/\.[^/.]+$/, "");
+
+        Object.keys(sensors).forEach(k => sensors[k] = []);
+        status.innerHTML = "Processing MP4 structure...";
+
+        const mp4box = MP4Box.createFile();
+        let gpmdTrackId = null;
+        let timescale = 1000;
+
+        mp4box.onReady = (info) => {
+            const track = info.tracks.find(t => t.codec === 'gpmd');
+            if (!track) { status.innerHTML = "No GPMD track found."; return; }
+            gpmdTrackId = track.id;
+            timescale = track.timescale;
+            mp4box.setExtractionOptions(gpmdTrackId);
+            mp4box.start();
+        };
+
+        mp4box.onSamples = (id, user, samples) => {
+            if (id === gpmdTrackId) {
+                samples.forEach(sample => {
+                    const cts_ms = (sample.cts / timescale) * 1000;
+                    const dur_ms = (sample.duration / timescale) * 1000;
+                    parseGPMD(sample.data, cts_ms, dur_ms);
+                });
+                status.innerHTML = `Extracted points: ACCL(${sensors.ACCL.length}), GPS(${sensors.GPS9.length}), GYRO(${sensors.GYRO.length}), GRAV(${sensors.GRAV.length}), CORI(${sensors.CORI.length})`;
+                dlBtn.style.display = 'block';
+            }
+        };
+
+        const reader = file.stream().getReader();
+        let offset = 0;
+        while (true) {
+            const { done, value } = await reader.read();
+            if (done) { mp4box.flush(); break; }
+            const buffer = value.buffer;
+            buffer.fileStart = offset;
+            offset += buffer.byteLength;
+            mp4box.appendBuffer(buffer);
+            progress.style.width = ((offset / file.size) * 100) + "%";
+        }
+    };
+
+    function parseGPMD(data, baseCts, duration) {
+        const view = new DataView(data.buffer, data.byteOffset, data.byteLength);
+        const buf = new Uint8Array(data.buffer, data.byteOffset, data.byteLength);
+        let currentTemp = null;
+
+        const recursive = (start, end) => {
+            let i = start;
+            while (i <= end - 8) {
+                const fourcc = String.fromCharCode(buf[i], buf[i+1], buf[i+2], buf[i+3]);
+                const type = String.fromCharCode(buf[i+4]);
+                const size = buf[i+5];
+                const count = view.getUint16(i+6);
+                const pSize = size * count;
+                const pOff = i + 8;
+
+                if (fourcc === 'DEVC' || fourcc === 'STRM') {
+                    recursive(pOff, pOff + pSize);
+                } else if (fourcc === 'TAMP') {
+                    currentTemp = view.getInt16(pOff) / 100;
+                } else if (fourcc === 'ACCL') {
+                    const isFloat = type === 'f';
+                    const bytesPerSample = isFloat ? 12 : 6;
+                    const samples = Math.floor(pSize / bytesPerSample);
+                    for (let c = 0; c < samples; c++) {
+                        const o = pOff + (c * bytesPerSample);
+                        sensors.ACCL.push({
+                            ts: baseCts + (c * (duration / samples)),
+                            x: isFloat ? view.getFloat32(o) : view.getInt16(o) / 100,
+                            y: isFloat ? view.getFloat32(o + 4) : view.getInt16(o + 2) / 100,
+                            z: isFloat ? view.getFloat32(o + 8) : view.getInt16(o + 4) / 100,
+                            temp: currentTemp
+                        });
+                    }
+                } else if (fourcc === 'GYRO') {
+                    const isFloat = type === 'f';
+                    const bytesPerSample = isFloat ? 12 : 6;
+                    const samples = Math.floor(pSize / bytesPerSample);
+                    for (let c = 0; c < samples; c++) {
+                        const o = pOff + (c * bytesPerSample);
+                        sensors.GYRO.push({
+                            ts: baseCts + (c * (duration / samples)),
+                            x: isFloat ? view.getFloat32(o) : view.getInt16(o) / 1000,
+                            y: isFloat ? view.getFloat32(o + 4) : view.getInt16(o + 2) / 1000,
+                            z: isFloat ? view.getFloat32(o + 8) : view.getInt16(o + 4) / 1000,
+                            temp: currentTemp
+                        });
+                    }
+                } else if (fourcc === 'GRAV') {
+                    const isFloat = type === 'f';
+                    const bytesPerSample = isFloat ? 12 : 6;
+                    const samples = Math.floor(pSize / bytesPerSample);
+                    for (let c = 0; c < samples; c++) {
+                        const o = pOff + (c * bytesPerSample);
+                        sensors.GRAV.push({
+                            ts: baseCts + (c * (duration / samples)),
+                            x: isFloat ? view.getFloat32(o) : view.getInt16(o) / 4096,
+                            y: isFloat ? view.getFloat32(o + 4) : view.getInt16(o + 2) / 4096,
+                            z: isFloat ? view.getFloat32(o + 8) : view.getInt16(o + 4) / 4096
+                        });
+                    }
+                } else if (fourcc === 'CORI') {
+                    const isFloat = type === 'f';
+                    const bytesPerSample = isFloat ? 16 : 8;
+                    const samples = Math.floor(pSize / bytesPerSample);
+                    for (let c = 0; c < samples; c++) {
+                        const o = pOff + (c * bytesPerSample);
+                        sensors.CORI.push({
+                            ts: baseCts + (c * (duration / samples)),
+                            w: isFloat ? view.getFloat32(o) : view.getInt16(o) / 32767,
+                            x: isFloat ? view.getFloat32(o + 4) : view.getInt16(o + 2) / 32767,
+                            y: isFloat ? view.getFloat32(o + 8) : view.getInt16(o + 4) / 32767,
+                            z: isFloat ? view.getFloat32(o + 12) : view.getInt16(o + 6) / 32767
+                        });
+                    }
+                } else if (fourcc === 'GPS9') {
+                    const gpsSamples = Math.floor(pSize / 32); 
+                    for (let c = 0; c < gpsSamples; c++) {
+                        const o = pOff + (c * 32); 
+                        sensors.GPS9.push({
+                            ts: baseCts + (c * (duration / gpsSamples)),
+                            lat: view.getInt32(o) / 10000000,
+                            lon: view.getInt32(o + 4) / 10000000,
+                            alt: view.getInt32(o + 8) / 1000,
+                            speed2d: view.getInt32(o + 12) / 1000,
+                            speed3d: view.getInt32(o + 16) / 1000,
+                            days: view.getUint32(o + 20),
+                            secs: view.getUint32(o + 24) / 1000,
+                            dop: view.getUint16(o + 28) / 100,
+                            fix: view.getUint16(o + 30),
+                            altSys: "MSLV"
+                        });
+                    }
+                }
+                
+                i += 8 + Math.ceil(pSize / 4) * 4;
+            }
+        };
+        recursive(0, data.byteLength);
+    }
+
+    dlBtn.onclick = () => {
+        status.innerHTML = "Generating Combined CSV (this may take a moment)...";
+        
+        // 1. Get all unique timestamps across all sensors
+        const allTs = new Set();
+        Object.values(sensors).forEach(arr => arr.forEach(p => allTs.add(p.ts.toFixed(6))));
+        const sortedTs = Array.from(allTs).sort((a, b) => parseFloat(a) - parseFloat(b));
+
+        // 2. Create Lookup Maps for fast merging
+        const maps = {};
+        Object.keys(sensors).forEach(k => {
+            maps[k] = new Map(sensors[k].map(p => [p.ts.toFixed(6), p]));
+        });
+
+        // 3. Build CSV matching GX018336_Combined_Telemetry.csv headers
+        let csv = "cts,date,ACCL_x,ACCL_y,ACCL_z,temp_ACCL,GYRO_x,GYRO_y,GYRO_z,temp_GYRO,GRAV_x,GRAV_y,GRAV_z,CORI_w,CORI_x,CORI_y,CORI_z,GPS (Lat.) [deg],GPS (Long.) [deg],GPS (Alt.) [m],GPS (2D) [m/s],GPS (3D) [m/s],GPS (days) [deg],GPS (secs) [s],GPS (DOP) [deg],GPS (fix) [deg],altitude system\n";
+        
+        const gpsBaseDate = new Date(Date.UTC(2000, 0, 1));
+        let currentDateStr = "";
+
+        sortedTs.forEach(ts => {
+            const a = maps.ACCL.get(ts) || {};
+            const g = maps.GYRO.get(ts) || {};
+            const grav = maps.GRAV.get(ts) || {};
+            const cori = maps.CORI.get(ts) || {};
+            const gps = maps.GPS9.get(ts) || {};
+            
+            // Build real-time ISO string using GoPro GPS days & seconds
+            if (gps.days !== undefined && gps.secs !== undefined) {
+                const d = new Date(gpsBaseDate.getTime() + (gps.days * 86400000) + (gps.secs * 1000));
+                currentDateStr = d.toISOString();
+            }
+
+            const row = [
+                ts,
+                currentDateStr,
+                a.x ?? "", a.y ?? "", a.z ?? "", a.temp ?? "",
+                g.x ?? "", g.y ?? "", g.z ?? "", g.temp ?? "",
+                grav.x ?? "", grav.y ?? "", grav.z ?? "",
+                cori.w ?? "", cori.x ?? "", cori.y ?? "", cori.z ?? "",
+                gps.lat ?? "", gps.lon ?? "", gps.alt ?? "",
+                gps.speed2d ?? "", gps.speed3d ?? "",
+                gps.days ?? "", gps.secs ?? "", gps.dop ?? "", gps.fix ?? "", gps.altSys ?? ""
+            ];
+            
+            csv += row.join(",") + "\n";
+        });
+
+        const blob = new Blob([csv], { type: 'text/csv' });
+        const url = URL.createObjectURL(blob);
+        const link = document.createElement('a');
+        link.href = url;
+        link.download = `${selectedFileName}_Full_Telemetry.csv`;
+        link.click();
+        status.innerHTML = "Done!";
+    };
+</script>
+</body>
+</html>

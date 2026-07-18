@@ -1,0 +1,1159 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>GoPro GPS Telemetry & Video Gate Analyzer</title>
+    
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script>
+        tailwind.config = {
+            darkMode: 'class',
+            theme: {
+                extend: {
+                    fontFamily: {
+                        sans: ['Inter', 'sans-serif'],
+                        mono: ['JetBrains Mono', 'monospace'],
+                    },
+                    colors: {
+                        brand: {
+                            500: '#ef4444',
+                            600: '#dc2626',
+                        },
+                        gray: {
+                            50: '#f8fafc',
+                            100: '#f1f5f9',
+                            200: '#e2e8f0',
+                            300: '#cbd5e1',
+                            400: '#94a3b8',
+                            500: '#64748b',
+                            600: '#475569',
+                            700: '#334155',
+                            800: '#1e293b',
+                            900: '#0f172a',
+                            950: '#020617',
+                        }
+                    }
+                }
+            }
+        }
+    </script>
+    
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;900&family=JetBrains+Mono:wght@400;700&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+    <script src="https://cdn.plot.ly/plotly-2.27.0.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/PapaParse/5.4.1/papaparse.min.js"></script>
+    <script src="https://unpkg.com/@phosphor-icons/web"></script>
+
+    <style>
+        body { -webkit-font-smoothing: antialiased; }
+        #map { height: 100%; width: 100%; z-index: 0; cursor: crosshair; }
+        
+        ::-webkit-scrollbar { width: 6px; height: 6px; }
+        ::-webkit-scrollbar-track { background: transparent; }
+        ::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 4px; }
+        ::-webkit-scrollbar-thumb:hover { background: #94a3b8; }
+        .dark ::-webkit-scrollbar-thumb { background: #334155; }
+        .dark ::-webkit-scrollbar-thumb:hover { background: #475569; }
+
+        input[type=range] { -webkit-appearance: none; background: transparent; }
+        input[type=range]::-webkit-slider-thumb {
+            -webkit-appearance: none; height: 14px; width: 14px; border-radius: 50%;
+            background: #ef4444; cursor: pointer; margin-top: -5px; 
+            box-shadow: 0 2px 4px rgba(0,0,0,0.2); transition: transform 0.1s;
+        }
+        input[type=range]::-webkit-slider-thumb:hover { transform: scale(1.2); }
+        input[type=range]::-webkit-slider-runnable-track {
+            width: 100%; height: 4px; cursor: pointer; background: #e2e8f0; border-radius: 2px;
+        }
+        .dark input[type=range]::-webkit-slider-runnable-track { background: #334155; }
+
+        .lap-checkbox {
+            -webkit-appearance: none; appearance: none; background-color: transparent;
+            margin: 0; font: inherit; color: currentColor; width: 1.15em; height: 1.15em;
+            border: 2px solid currentColor; border-radius: 0.25em; display: grid; place-content: center;
+        }
+        .lap-checkbox::before {
+            content: ""; width: 0.65em; height: 0.65em; transform: scale(0);
+            transition: 120ms transform ease-in-out; box-shadow: inset 1em 1em white;
+            background-color: transform; transform-origin: center;
+            clip-path: polygon(14% 44%, 0 65%, 50% 100%, 100% 16%, 80% 0%, 43% 62%);
+        }
+        .lap-checkbox:checked { background-color: #ef4444; border-color: #ef4444; }
+        .lap-checkbox:checked::before { transform: scale(1); }
+        
+        .no-scrollbar::-webkit-scrollbar { display: none; }
+        .no-scrollbar { -ms-overflow-style: none; scrollbar-width: none; }
+
+        .video-card video { width: 100%; height: 100%; object-fit: cover; border-radius: 0.5rem; background: #000; }
+        .video-card .error-overlay { display: none; }
+        .video-card.has-error .error-overlay { display: flex; }
+    </style>
+</head>
+<body class="bg-gray-50 dark:bg-gray-950 h-screen flex flex-col overflow-hidden text-gray-800 dark:text-gray-200 transition-colors duration-200">
+
+    <header class="bg-white dark:bg-gray-900 border-b border-gray-200 dark:border-gray-800 px-6 py-3 flex justify-between items-center z-20 flex-shrink-0 transition-colors duration-200 h-16">
+        <div class="flex items-center gap-3">
+            <div class="leading-none flex items-center gap-2">
+                <i class="ph-fill ph-steering-wheel text-brand-600 text-2xl"></i>
+                <div class="text-xl font-black tracking-tight">
+                    <span class="text-brand-600">KART</span><span class="text-gray-900 dark:text-white">DATA</span>
+                </div>
+            </div>
+            <div class="hidden md:block h-6 w-px bg-gray-200 dark:bg-gray-700 mx-2"></div>
+            <p class="hidden md:block text-xs font-medium text-gray-500 dark:text-gray-400 tracking-wide uppercase">Precision Telemetry Suite</p>
+        </div>
+        
+        <div class="flex items-center gap-4">
+            <div id="file-info" class="hidden items-center gap-3 mr-4 text-sm bg-gray-100 dark:bg-gray-800 px-3 py-1.5 rounded-full border border-gray-200 dark:border-gray-700">
+                <i class="ph ph-file-csv text-gray-500 dark:text-gray-400"></i>
+                <span id="filename-display" class="font-semibold text-gray-700 dark:text-gray-200 max-w-[150px] truncate"></span>
+                <div class="w-1 h-1 rounded-full bg-gray-300 dark:bg-gray-600"></div>
+                <span id="lap-count-display" class="font-bold text-brand-600 dark:text-brand-500"></span>
+            </div>
+            
+            <div class="flex gap-3 items-center">
+                <label class="cursor-pointer bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-600 hover:border-gray-400 dark:hover:border-gray-500 hover:shadow-sm text-gray-700 dark:text-gray-200 px-4 py-2 rounded-xl text-sm font-semibold transition-all flex items-center gap-2 active:scale-95">
+                    <i class="ph ph-video-camera text-lg text-gray-500 dark:text-gray-400"></i>
+                    <span id="video-btn-text">Add Video</span>
+                    <input type="file" id="video-upload" accept="video/*" class="hidden" />
+                </label>
+
+                <label class="cursor-pointer bg-brand-600 hover:bg-brand-500 text-white px-4 py-2 rounded-xl text-sm font-semibold transition-all shadow-sm shadow-brand-500/20 flex items-center gap-2 active:scale-95">
+                    <i class="ph ph-upload-simple text-lg"></i>
+                    Upload CSV
+                    <input type="file" id="csv-upload" accept=".csv" class="hidden" />
+                </label>
+
+                <div class="w-px h-6 bg-gray-200 dark:bg-gray-700 mx-1"></div>
+
+                <button id="theme-toggle" class="p-2 rounded-xl text-gray-500 hover:bg-gray-100 dark:text-gray-400 dark:hover:bg-gray-800 transition-colors" title="Toggle Theme">
+                    <i class="ph ph-moon text-xl dark:hidden"></i>
+                    <i class="ph ph-sun text-xl hidden dark:block text-yellow-400"></i>
+                </button>
+            </div>
+        </div>
+    </header>
+
+    <div class="flex-1 flex overflow-hidden">
+        
+        <aside id="app-sidebar" class="w-80 flex flex-col border-r border-gray-200 dark:border-gray-800 bg-white dark:bg-gray-900 hidden flex-shrink-0 transition-colors z-10 shadow-[4px_0_24px_rgba(0,0,0,0.02)] dark:shadow-[4px_0_24px_rgba(0,0,0,0.2)]">
+            
+            <div class="p-6 border-b border-gray-200 dark:border-gray-800">
+                <h3 class="text-[10px] font-bold text-gray-400 dark:text-gray-500 uppercase tracking-wider mb-4">Live Telemetry</h3>
+                <div class="flex flex-col gap-4">
+                    <div class="bg-gray-50 dark:bg-gray-950 p-4 rounded-2xl border border-gray-100 dark:border-gray-800 flex flex-col items-center justify-center relative overflow-hidden">
+                        <div class="absolute inset-0 bg-gradient-to-br from-gray-100/50 to-transparent dark:from-gray-800/20 dark:to-transparent"></div>
+                        <span class="text-xs font-semibold text-gray-500 dark:text-gray-400 z-10">SPEED</span>
+                        <div class="flex items-baseline gap-1 z-10">
+                            <span id="live-speed" class="text-4xl font-black text-gray-900 dark:text-white tracking-tighter font-mono">0.0</span>
+                            <span class="text-sm font-bold text-gray-400">km/h</span>
+                        </div>
+                    </div>
+                    
+                    <div class="grid grid-cols-2 gap-3">
+                        <div class="bg-gray-50 dark:bg-gray-950 p-3 rounded-xl border border-gray-100 dark:border-gray-800 flex flex-col items-center">
+                            <span class="text-[10px] font-semibold text-gray-500 dark:text-gray-400 mb-1">TIME</span>
+                            <span id="live-time" class="text-lg font-bold text-gray-800 dark:text-gray-200 font-mono">00:00.000</span>
+                        </div>
+                        <div class="bg-gray-50 dark:bg-gray-950 p-3 rounded-xl border border-gray-100 dark:border-gray-800 flex flex-col items-center">
+                            <span class="text-[10px] font-semibold text-gray-500 dark:text-gray-400 mb-1">LAP</span>
+                            <span id="live-lap" class="text-lg font-bold text-brand-600 font-mono">-</span>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <div class="p-4 border-b border-gray-200 dark:border-gray-800 bg-gray-50/50 dark:bg-gray-900/50">
+                <h3 class="text-[10px] font-bold text-gray-400 dark:text-gray-500 uppercase tracking-wider mb-2">Gate Configuration</h3>
+                <div id="stepText" class="text-xs text-gray-600 dark:text-gray-300 mb-3 bg-blue-50 dark:bg-blue-900/20 text-blue-700 dark:text-blue-300 p-2.5 rounded-lg border border-blue-100 dark:border-blue-800/30 leading-tight">
+                    Draw a gate line across the track on the map to automatically split and calculate laps.
+                </div>
+                
+                <div class="flex gap-2">
+                    <button id="draw-gate-btn" disabled class="flex-1 bg-gray-900 hover:bg-black dark:bg-gray-700 dark:hover:bg-gray-600 disabled:opacity-50 text-white text-xs font-semibold py-2 px-3 rounded-lg flex items-center justify-center gap-1.5 transition-all active:scale-95 shadow-sm">
+                        <i class="ph ph-pen-nib text-base"></i> Set Gate
+                    </button>
+                    <button id="clear-gate-btn" class="bg-white dark:bg-gray-800 hover:bg-gray-50 dark:hover:bg-gray-700 border border-gray-200 dark:border-gray-700 text-gray-700 dark:text-gray-300 text-xs font-semibold py-2 px-3 rounded-lg transition-all active:scale-95 shadow-sm">
+                        Reset
+                    </button>
+                </div>
+            </div>
+
+            <div class="flex-1 flex flex-col overflow-hidden">
+                <div class="p-4 pb-2 flex flex-col gap-2">
+                    <div class="flex justify-between items-center">
+                        <h3 class="text-[10px] font-bold text-gray-400 dark:text-gray-500 uppercase tracking-wider">Lap Visibility</h3>
+                        <label class="flex items-center gap-1.5 cursor-pointer bg-gray-100 dark:bg-gray-800 px-2 py-1 rounded">
+                            <span class="text-[10px] text-gray-500 dark:text-gray-400 uppercase font-bold">Sort by Time</span>
+                            <input type="checkbox" id="sort-laps-toggle" class="rounded text-brand-600 focus:ring-0 w-3 h-3 bg-gray-200 dark:bg-gray-700 border-transparent">
+                        </label>
+                    </div>
+                    <div class="flex items-center justify-end gap-2 group relative">
+                        <i class="ph ph-chart-line-up text-gray-400 text-sm" title="Data Smoothing"></i>
+                        <input type="range" id="smoothing-slider" min="0" max="20" value="0" step="1" class="w-20">
+                        <span id="smoothing-value" class="text-xs font-mono text-gray-500">0</span>
+                    </div>
+                </div>
+                
+                <div id="sidebar-lap-list" class="flex-1 overflow-y-auto p-4 pt-0 space-y-1 custom-scrollbar">
+                    <!-- Populated via JS -->
+                </div>
+            </div>
+        </aside>
+
+        <main class="flex-1 flex flex-col relative bg-gray-100 dark:bg-gray-950">
+            
+            <div id="empty-state" class="absolute inset-0 flex flex-col items-center justify-center z-10 bg-gray-50 dark:bg-gray-950 transition-colors">
+                <div class="w-24 h-24 bg-gray-100 dark:bg-gray-900 rounded-full flex items-center justify-center mb-6 shadow-sm">
+                    <i class="ph ph-flag-checkered text-5xl text-gray-300 dark:text-gray-700"></i>
+                </div>
+                <h2 class="text-2xl font-bold text-gray-800 dark:text-gray-200 mb-2">No Telemetry Loaded</h2>
+                <p class="text-gray-500 dark:text-gray-400 text-center max-w-sm mb-8">Upload a CSV file containing your GPS and speed data to begin analyzing your performance.</p>
+                <label class="cursor-pointer bg-brand-600 hover:bg-brand-500 text-white px-6 py-3 rounded-xl font-bold transition-all shadow-lg shadow-brand-500/30 flex items-center gap-2 active:scale-95 text-lg">
+                    <i class="ph ph-upload-simple text-xl"></i>
+                    Upload Telemetry CSV
+                    <input type="file" onchange="document.getElementById('csv-upload').files = this.files; document.getElementById('csv-upload').dispatchEvent(new Event('change'));" accept=".csv" class="hidden" />
+                </label>
+            </div>
+
+            <div id="dashboard-content" class="flex-1 flex flex-col overflow-hidden hidden h-full">
+                <div class="flex-1 flex flex-col lg:flex-row overflow-hidden">
+                    
+                    <div class="w-full lg:w-1/2 flex flex-col border-r border-gray-200 dark:border-gray-800 relative bg-gray-200 dark:bg-gray-900">
+                        <div id="map" class="flex-1"></div>
+                        <div class="absolute top-4 left-4 z-[1000] bg-white/90 dark:bg-gray-900/90 backdrop-blur px-3 py-1.5 rounded-lg border border-gray-200 dark:border-gray-700 shadow-sm pointer-events-none">
+                            <span class="text-xs font-bold text-gray-500 dark:text-gray-400 uppercase tracking-wide">GPS Track</span>
+                        </div>
+                    </div>
+
+                    <div class="w-full lg:w-1/2 flex flex-col bg-white dark:bg-gray-900 overflow-y-auto">
+                        <div class="flex-1 p-4 flex flex-col gap-4">
+                            <div class="flex-1 min-h-[250px] bg-white dark:bg-gray-900 rounded-xl border border-gray-200 dark:border-gray-800 shadow-sm p-2 flex flex-col">
+                                <div id="chart-speed-dist" class="flex-1 w-full"></div>
+                            </div>
+                            <div class="flex-1 min-h-[250px] bg-white dark:bg-gray-900 rounded-xl border border-gray-200 dark:border-gray-800 shadow-sm p-2 flex flex-col">
+                                <div id="chart-speed-time" class="flex-1 w-full"></div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <div id="video-section" class="bg-gray-900 dark:bg-gray-950 border-t border-gray-800 dark:border-gray-800 flex-shrink-0 hidden flex flex-col transition-all duration-200">
+                    <div class="bg-gray-800 dark:bg-gray-900 px-4 py-2 flex justify-between items-center border-b border-gray-700 dark:border-gray-800">
+                        <h3 class="text-gray-300 text-xs font-bold flex items-center gap-2 uppercase tracking-wider">
+                            <i class="ph-fill ph-film-strip text-brand-500"></i> Video Synchronization
+                        </h3>
+                        <div class="flex items-center gap-3 bg-gray-900/50 dark:bg-black/20 px-3 py-1 rounded-lg">
+                            <i class="ph ph-monitor text-gray-500 text-sm"></i>
+                            <input type="range" id="video-size-slider" min="200" max="800" value="350" class="w-24">
+                        </div>
+                    </div>
+                    <div class="flex-1 p-3 overflow-x-auto overflow-y-hidden flex gap-3 items-center justify-start custom-scrollbar" id="video-grid">
+                        <!-- Populated via JS -->
+                    </div>
+                </div>
+            </div>
+        </main>
+    </div>
+
+    <footer id="playback-bar" class="bg-white/95 dark:bg-gray-900/95 backdrop-blur-md border-t border-gray-200 dark:border-gray-800 px-6 py-4 flex items-center gap-6 shadow-[0_-10px_30px_rgba(0,0,0,0.05)] dark:shadow-[0_-10px_30px_rgba(0,0,0,0.2)] z-30 hidden transition-colors flex-shrink-0">
+        
+        <div class="flex items-center gap-3">
+            <button id="prev-frame-btn" class="p-2 text-gray-500 dark:text-gray-400 hover:text-brand-600 dark:hover:text-brand-500 hover:bg-gray-100 dark:hover:bg-gray-800 rounded-full transition-all" title="Previous Frame (-0.04s)">
+                <i class="ph-fill ph-skip-back text-xl"></i>
+            </button>
+
+            <button id="play-btn" class="w-12 h-12 flex items-center justify-center rounded-full bg-brand-600 text-white hover:bg-brand-500 hover:shadow-lg hover:shadow-brand-500/30 transition-all shadow-md active:scale-95 flex-shrink-0">
+                <i class="ph-fill ph-play text-2xl ml-1"></i>
+            </button>
+
+            <button id="next-frame-btn" class="p-2 text-gray-500 dark:text-gray-400 hover:text-brand-600 dark:hover:text-brand-500 hover:bg-gray-100 dark:hover:bg-gray-800 rounded-full transition-all" title="Next Frame (+0.04s)">
+                <i class="ph-fill ph-skip-forward text-xl"></i>
+            </button>
+        </div>
+
+        <div class="h-10 w-px bg-gray-200 dark:bg-gray-800 mx-2"></div>
+
+        <div class="flex-1 flex flex-col justify-center gap-2">
+            <div class="flex justify-between text-xs font-bold text-gray-500 dark:text-gray-400 font-mono tracking-wide">
+                <span id="scrubber-current" class="text-gray-900 dark:text-white bg-gray-100 dark:bg-gray-800 px-2 py-0.5 rounded">0.00</span>
+                <span id="scrubber-total">0.00</span>
+            </div>
+            <input type="range" id="main-scrubber" min="0" max="100" value="0" step="0.01" class="w-full">
+        </div>
+
+        <div class="h-10 w-px bg-gray-200 dark:bg-gray-800 mx-2"></div>
+
+        <div class="flex items-center gap-4">
+            <div class="flex bg-gray-100 dark:bg-gray-800 rounded-lg p-1 flex-shrink-0 border border-gray-200 dark:border-gray-700">
+                <button id="mode-dist" class="px-4 py-1.5 text-xs font-bold rounded-md bg-white dark:bg-gray-700 text-brand-600 dark:text-brand-400 shadow-sm transition-all">Distance</button>
+                <button id="mode-time" class="px-4 py-1.5 text-xs font-bold rounded-md text-gray-500 dark:text-gray-400 hover:text-gray-800 dark:hover:text-gray-200 transition-all">Time</button>
+            </div>
+
+            <div class="flex items-center bg-gray-100 dark:bg-gray-800 rounded-lg border border-gray-200 dark:border-gray-700 overflow-hidden">
+                <div class="px-2 py-1.5 text-gray-400 dark:text-gray-500 bg-gray-200/50 dark:bg-gray-700/50 flex items-center border-r border-gray-200 dark:border-gray-700">
+                    <i class="ph ph-gauge text-sm"></i>
+                </div>
+                <select id="playback-speed" class="bg-transparent border-none text-xs font-bold text-gray-700 dark:text-gray-200 pl-2 pr-4 py-1.5 outline-none focus:ring-0 cursor-pointer appearance-none">
+                    <option value="0.25">0.25x</option>
+                    <option value="0.5">0.5x</option>
+                    <option value="1" selected>1.0x</option>
+                    <option value="2">2.0x</option>
+                    <option value="4">4.0x</option>
+                    <option value="8">8.0x</option>
+                </select>
+            </div>
+        </div>
+    </footer>
+
+    <script>
+        // --- Global State & Configuration ---
+        let rawData = [];
+        let lapsData = [];
+        let map = null;
+        let tileLayer = null; 
+        let lapMarkers = {};
+        let polylineLayerGroup = null;
+        let selectedLapIndices = new Set(['all']);
+        let currentVideoSize = 350; 
+        let isDarkMode = false;
+        let currentSmoothing = 0;
+        let isRelayouting = false; 
+        let currentPositionMarker = null; 
+        let sortLapsByTime = false;
+
+        let gatePoints = [];
+        let gateLayer = null;
+        let ghostLayer = null;
+        let isDrawingGate = false;
+
+        let videoBlobUrl = null;
+        let videoElements = []; 
+        let playbackState = {
+            isPlaying: false,
+            mode: 'distance', 
+            currentValue: 0, 
+            maxValue: 0,
+            animFrameId: null,
+            lastFrameTime: 0,
+            baseSpeed: 1.0, 
+            distanceSimSpeed: 25.0 
+        };
+
+        const COLORS = [
+            '#3b82f6', '#ef4444', '#22c55e', '#f59e0b', '#a855f7', '#06b6d4', '#ec4899', '#84cc16',
+            '#f97316', '#6366f1', '#10b981', '#f43f5e', '#8b5cf6', '#d946ef', '#14b8a6', '#eab308'
+        ];
+
+        document.addEventListener('DOMContentLoaded', () => {
+            initMap();
+            setupEventListeners();
+            if (window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches) {
+                toggleTheme();
+            }
+        });
+
+        function getDistanceFromLatLonInM(lat1, lon1, lat2, lon2) {
+            const R = 6371000; 
+            const dLat = deg2rad(lat2 - lat1); 
+            const dLon = deg2rad(lon2 - lon1); 
+            const a = Math.sin(dLat / 2) * Math.sin(dLat / 2) + Math.cos(deg2rad(lat1)) * Math.cos(deg2rad(lat2)) * Math.sin(dLon / 2) * Math.sin(dLon / 2); 
+            const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a)); 
+            return R * c;
+        }
+
+        function deg2rad(deg) { return deg * (Math.PI / 180); }
+
+        function formatTime(seconds) {
+            if (seconds === null || isNaN(seconds)) return "--:--.---";
+            const m = Math.floor(seconds / 60); 
+            const s = Math.floor(seconds % 60); 
+            const ms = Math.floor((seconds % 1) * 1000);
+            return `${m}:${s < 10 ? '0' : ''}${s}.${ms.toString().padStart(3, '0')}`;
+        }
+
+        function smoothData(data, windowSize) {
+            if (!windowSize || windowSize <= 0) return data;
+            const smoothed = [];
+            for (let i = 0; i < data.length; i++) {
+                let sum = 0, count = 0;
+                for (let j = i - windowSize; j <= i + windowSize; j++) { 
+                    if (j >= 0 && j < data.length) { sum += data[j]; count++; } 
+                }
+                smoothed.push(sum / count);
+            }
+            return smoothed;
+        }
+
+        function intersects(a, b, c, d, p, q, r, s) {
+            let det = (c - a) * (s - q) - (r - p) * (d - b);
+            if (det === 0) return false;
+            let lambda = ((s - q) * (r - a) + (p - r) * (s - b)) / det;
+            let gamma = ((b - d) * (r - a) + (c - a) * (s - b)) / det;
+            return (0 < lambda && lambda < 1) && (0 < gamma && gamma < 1);
+        }
+
+        function setupEventListeners() {
+            document.getElementById('csv-upload').addEventListener('change', handleFileUpload);
+            document.getElementById('video-upload').addEventListener('change', handleVideoUpload);
+            
+            document.getElementById('smoothing-slider').addEventListener('input', (e) => {
+                currentSmoothing = parseInt(e.target.value);
+                document.getElementById('smoothing-value').textContent = currentSmoothing;
+                if (lapsData.length > 0) renderCharts(getSelectedLaps());
+            });
+
+            document.getElementById('sort-laps-toggle').addEventListener('change', (e) => {
+                sortLapsByTime = e.target.checked;
+                renderLapList();
+            });
+
+            document.getElementById('draw-gate-btn').addEventListener('click', toggleGateDrawingMode);
+            document.getElementById('clear-gate-btn').addEventListener('click', resetGate);
+            document.getElementById('theme-toggle').addEventListener('click', toggleTheme);
+            document.getElementById('play-btn').addEventListener('click', togglePlayback);
+            document.getElementById('mode-dist').addEventListener('click', () => setPlaybackMode('distance'));
+            document.getElementById('mode-time').addEventListener('click', () => setPlaybackMode('time'));
+            
+            document.getElementById('playback-speed').addEventListener('change', (e) => {
+                playbackState.baseSpeed = parseFloat(e.target.value);
+                updateVideoPlaybackRates();
+            });
+
+            document.getElementById('prev-frame-btn').addEventListener('click', () => stepFrame(-0.04));
+            document.getElementById('next-frame-btn').addEventListener('click', () => stepFrame(0.04));
+
+            const scrubber = document.getElementById('main-scrubber');
+            scrubber.addEventListener('input', (e) => manualSeek(parseFloat(e.target.value)));
+            scrubber.addEventListener('mousedown', () => pausePlayback());
+
+            const sizeSlider = document.getElementById('video-size-slider');
+            const videoSection = document.getElementById('video-section');
+            
+            sizeSlider.addEventListener('input', (e) => {
+                currentVideoSize = parseInt(e.target.value);
+                const cards = document.querySelectorAll('.video-card');
+                cards.forEach(card => {
+                    card.style.width = `${currentVideoSize}px`;
+                    card.style.height = `${Math.round(currentVideoSize * 9 / 16)}px`;
+                });
+                videoSection.style.height = `${Math.round(currentVideoSize * 9 / 16) + 60}px`;
+            });
+            
+            window.addEventListener('resize', () => {
+                if (lapsData.length > 0) {
+                    Plotly.Plots.resize('chart-speed-dist');
+                    Plotly.Plots.resize('chart-speed-time');
+                }
+            });
+        }
+
+        function initMap() {
+            map = L.map('map', { zoomControl: false }).setView([0, 0], 2);
+            L.control.zoom({ position: 'bottomright' }).addTo(map);
+            tileLayer = L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png', { 
+                attribution: '&copy; OpenStreetMap' 
+            }).addTo(map);
+            polylineLayerGroup = L.layerGroup().addTo(map);
+
+            map.on('mousemove', handleMapMouseMove);
+            map.on('click', handleMapClick);
+        }
+
+        function toggleGateDrawingMode() {
+            if (rawData.length === 0) return;
+            isDrawingGate = true;
+            gatePoints = [];
+            if (gateLayer) map.removeLayer(gateLayer);
+            if (ghostLayer) map.removeLayer(ghostLayer);
+            document.getElementById('stepText').innerHTML = "<span class='text-brand-600 dark:text-brand-400 font-bold flex items-center gap-2 animate-pulse'><i class='ph ph-crosshair text-lg'></i> Click map for Gate START point</span>";
+        }
+
+        function handleMapMouseMove(e) {
+            if (isDrawingGate && gatePoints.length === 1) {
+                if (ghostLayer) map.removeLayer(ghostLayer);
+                ghostLayer = L.polyline([gatePoints[0], e.latlng], { 
+                    color: '#ef4444', weight: 3, dashArray: '6,6', opacity: 0.8 
+                }).addTo(map);
+            }
+        }
+
+        function handleMapClick(e) {
+            if (!isDrawingGate || rawData.length === 0) return;
+
+            if (gatePoints.length === 0) {
+                gatePoints.push(e.latlng);
+                document.getElementById('stepText').innerHTML = "<span class='text-brand-600 dark:text-brand-400 font-bold flex items-center gap-2 animate-pulse'><i class='ph ph-crosshair text-lg'></i> Click map for Gate END point</span>";
+            } else if (gatePoints.length === 1) {
+                gatePoints.push(e.latlng);
+                isDrawingGate = false;
+                
+                if (ghostLayer) map.removeLayer(ghostLayer);
+                gateLayer = L.polyline(gatePoints, { color: '#ef4444', weight: 5, opacity: 1 }).addTo(map);
+                
+                document.getElementById('stepText').innerHTML = "<span class='text-green-600 dark:text-green-400 font-bold flex items-center gap-1.5'><i class='ph-fill ph-check-circle text-lg'></i> Gate Locked! Calculating splits...</span>";
+                calculateLapsWithGate();
+            }
+        }
+
+        function resetGate() {
+            gatePoints = [];
+            isDrawingGate = false;
+            if (gateLayer) map.removeLayer(gateLayer);
+            if (ghostLayer) map.removeLayer(ghostLayer);
+            
+            if (rawData.length > 0) {
+                document.getElementById('stepText').innerHTML = "Draw a gate line across the track on the map to automatically split and calculate laps.";
+                calculateDefaultSingleLap();
+            }
+        }
+
+        function handleFileUpload(event) {
+            const file = event.target.files[0];
+            if (!file) return;
+            document.getElementById('filename-display').textContent = file.name;
+            Papa.parse(file, {
+                header: true, dynamicTyping: true, skipEmptyLines: true,
+                complete: (results) => {
+                    if (results.errors.length > 0) console.warn("CSV Errors:", results.errors);
+                    processIncomingCSV(results.data);
+                },
+                error: (err) => alert("Parsing Failure: " + err.message)
+            });
+        }
+
+        function processIncomingCSV(data) {
+            const clean = [];
+            let totalDist = 0;
+            let startTime = null;
+
+            if (data.length === 0) return;
+
+            const keys = Object.keys(data[0]);
+            const latKey = keys.find(k => k.toLowerCase().includes("lat"));
+            const lonKey = keys.find(k => k.toLowerCase().includes("lon") || k.toLowerCase().includes("long"));
+            const speedKey = keys.find(k => k.includes("2D") || k.toLowerCase().includes("speed") || k.includes("3D"));
+            const timeKey = keys.find(k => k.toLowerCase().includes("date") || k.includes("cts") || k.toLowerCase().includes("time"));
+
+            if (!latKey || !lonKey) return; 
+
+            let prevLat = null, prevLon = null;
+            for (let i = 0; i < data.length; i++) {
+                const row = data[i];
+                const lat = parseFloat(row[latKey]);
+                const lon = parseFloat(row[lonKey]);
+                if (isNaN(lat) || isNaN(lon)) continue;
+
+                let speedMS = parseFloat(row[speedKey] || 0);
+                let speed = speedMS * 3.6; 
+                if (row[speedKey] && row[speedKey].toString().includes("km/h")) {
+                    speed = parseFloat(row[speedKey]);
+                    speedMS = speed / 3.6;
+                }
+
+                let timestamp = 0;
+                if (row[timeKey]) {
+                    if (!isNaN(row[timeKey]) && row[timeKey] > 100000) {
+                        if (startTime === null) startTime = row[timeKey];
+                        timestamp = (row[timeKey] - startTime) / 1000;
+                    } else {
+                        const t = new Date(row[timeKey]).getTime();
+                        if (!isNaN(t)) {
+                            if (startTime === null) startTime = t;
+                            timestamp = (t - startTime) / 1000;
+                        } else {
+                            timestamp = i * 0.1; 
+                        }
+                    }
+                } else { timestamp = i * 0.1; }
+
+                if (prevLat !== null) {
+                    totalDist += getDistanceFromLatLonInM(prevLat, prevLon, lat, lon);
+                }
+
+                clean.push({ index: i, lat, lon, speed, speedMS, time: timestamp, totalDistance: totalDist, rowId: i });
+                prevLat = lat; prevLon = lon;
+            }
+
+            if (clean.length === 0) return;
+            
+            rawData = clean;
+            document.getElementById('draw-gate-btn').disabled = false;
+            
+            calculateDefaultSingleLap();
+        }
+
+        function calculateDefaultSingleLap() {
+            lapsData = [];
+            if (rawData.length === 0) return;
+
+            const loopTrace = rawData.map(p => ({ ...p, lap: 1, lapDistance: p.totalDistance }));
+            loopTrace.duration = rawData[rawData.length - 1].time - rawData[0].time;
+            loopTrace.maxDistance = rawData[rawData.length - 1].totalDistance;
+            
+            lapsData = [loopTrace];
+            selectedLapIndices = new Set(['all']);
+            updateUIState();
+            updateVisualization();
+        }
+
+        function calculateLapsWithGate() {
+            if (gatePoints.length < 2 || rawData.length === 0) return;
+            lapsData = [];
+
+            let lastSplitIdx = 0;
+            const processedLaps = [];
+            const gLng1 = gatePoints[0].lng, gLat1 = gatePoints[0].lat;
+            const gLng2 = gatePoints[1].lng, gLat2 = gatePoints[1].lat;
+
+            for (let i = 1; i < rawData.length; i++) {
+                const ptA = rawData[i - 1], ptB = rawData[i];
+                if (intersects(ptA.lon, ptA.lat, ptB.lon, ptB.lat, gLng1, gLat1, gLng2, gLat2)) {
+                    if (i - lastSplitIdx > 50) {
+                        processedLaps.push(rawData.slice(lastSplitIdx, i + 1));
+                        lastSplitIdx = i;
+                    }
+                }
+            }
+            if (rawData.length - lastSplitIdx > 10) processedLaps.push(rawData.slice(lastSplitIdx));
+
+            lapsData = processedLaps.map((points, idx) => {
+                if (points.length === 0) return null;
+                const baseDist = points[0].totalDistance, baseTime = points[0].time;
+                const normalized = points.map(p => ({ ...p, lap: idx + 1, lapDistance: p.totalDistance - baseDist }));
+                normalized.duration = points[points.length - 1].time - baseTime;
+                normalized.maxDistance = points[points.length - 1].totalDistance - baseDist;
+                return normalized;
+            }).filter(l => l !== null);
+
+            selectedLapIndices = new Set(['all']);
+            updateUIState();
+            updateVisualization();
+        }
+
+        function updateUIState() {
+            document.getElementById('empty-state').classList.add('hidden');
+            document.getElementById('app-sidebar').classList.remove('hidden');
+            document.getElementById('dashboard-content').classList.remove('hidden');
+            document.getElementById('file-info').classList.remove('hidden');
+            document.getElementById('file-info').classList.add('flex');
+            document.getElementById('playback-bar').classList.remove('hidden');
+            
+            document.getElementById('lap-count-display').textContent = `${lapsData.length} Laps`;
+            
+            renderLapList();
+            
+            setTimeout(() => {
+                map.invalidateSize();
+                if (rawData && rawData.length > 0) {
+                    const bounds = L.latLngBounds(rawData.map(p => [p.lat, p.lon]));
+                    map.fitBounds(bounds, { padding: [20, 20] });
+                }
+                if(document.getElementById('chart-speed-dist').data) Plotly.Plots.resize('chart-speed-dist');
+                if(document.getElementById('chart-speed-time').data) Plotly.Plots.resize('chart-speed-time');
+            }, 150);
+        }
+
+        function renderLapList() {
+            const list = document.getElementById('sidebar-lap-list');
+            list.innerHTML = '';
+            
+            list.appendChild(createFilterItem('All Laps', 'all', selectedLapIndices.has('all'), '#3b82f6', null, false));
+            
+            const sep = document.createElement('div');
+            sep.className = "h-px w-full bg-gray-200 dark:bg-gray-800 my-2";
+            list.appendChild(sep);
+
+            let lapsToDisplay = lapsData.map((lap, idx) => ({ lap, idx }));
+            
+            if (sortLapsByTime) {
+                lapsToDisplay.sort((a, b) => {
+                    const durA = a.lap.duration || Infinity;
+                    const durB = b.lap.duration || Infinity;
+                    return durA - durB;
+                });
+            }
+
+            let bestTime = Math.min(...lapsData.map(l => l.duration).filter(d => d > 0));
+
+            lapsToDisplay.forEach((item) => {
+                const isChecked = selectedLapIndices.has(item.idx) || selectedLapIndices.has('all');
+                const isBest = item.lap.duration === bestTime && lapsData.length > 1;
+                list.appendChild(createFilterItem(`Lap ${item.idx + 1}`, item.idx, isChecked, COLORS[item.idx % COLORS.length], item.lap.duration, isBest));
+            });
+        }
+
+        function createFilterItem(label, value, checked, color, duration, isBest) {
+            const wrapper = document.createElement('label');
+            wrapper.className = "flex items-center gap-3 p-2 hover:bg-gray-100 dark:hover:bg-gray-800 rounded-xl cursor-pointer transition-colors border border-transparent hover:border-gray-200 dark:hover:border-gray-700 select-none";
+            
+            let durationHtml = '';
+            if (duration !== null && duration !== undefined) {
+                 const timeStr = formatTime(duration);
+                 durationHtml = `<div class="ml-auto text-xs font-mono font-bold ${isBest ? 'text-green-600 dark:text-green-500' : 'text-gray-500 dark:text-gray-400'} flex items-center gap-1">${isBest ? '<i class="ph-fill ph-trophy text-[10px]"></i>' : ''}${timeStr}</div>`;
+            }
+
+            wrapper.innerHTML = `
+                <input type="checkbox" value="${value}" ${checked ? 'checked' : ''} class="lap-checkbox focus:ring-0">
+                <div class="w-3 h-3 rounded-full shadow-sm flex-shrink-0" style="background-color: ${color}"></div>
+                <span class="text-sm font-semibold text-gray-700 dark:text-gray-300 truncate">${label}</span>
+                ${durationHtml}
+            `;
+            
+            const checkbox = wrapper.querySelector('input');
+            checkbox.addEventListener('change', (e) => handleFilterChange(value, e.target.checked));
+            return wrapper;
+        }
+
+        function handleFilterChange(value, isChecked) {
+            const allCheckboxes = document.querySelectorAll('.lap-checkbox');
+            if (value === 'all') {
+                if (isChecked) { 
+                    allCheckboxes.forEach(cb => { if (cb.value !== 'all') cb.checked = false; }); 
+                    selectedLapIndices = new Set(['all']); 
+                } else { 
+                    if (selectedLapIndices.size === 0) document.querySelector('input[value="all"]').checked = true;
+                    else selectedLapIndices.delete('all');
+                }
+            } else {
+                if (isChecked) { 
+                    if (selectedLapIndices.has('all')) { 
+                        selectedLapIndices.delete('all'); 
+                        document.querySelector('input[value="all"]').checked = false; 
+                    } 
+                    selectedLapIndices.add(parseInt(value)); 
+                } else { 
+                    selectedLapIndices.delete(parseInt(value)); 
+                    if (selectedLapIndices.size === 0) {
+                        selectedLapIndices.add('all'); 
+                        document.querySelector('input[value="all"]').checked = true; 
+                    } 
+                }
+            }
+            updateVisualization();
+        }
+
+        function toggleTheme() {
+            isDarkMode = !isDarkMode;
+            document.documentElement.classList.toggle('dark');
+            if (map && tileLayer) {
+                map.removeLayer(tileLayer);
+                const url = isDarkMode ? 'https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png' : 'https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png';
+                tileLayer = L.tileLayer(url, { attribution: '&copy; OpenStreetMap', maxNativeZoom: 19, maxZoom: 25 }).addTo(map);
+                if (polylineLayerGroup) polylineLayerGroup.addTo(map);
+            }
+            if (lapsData.length > 0) updateVisualization();
+        }
+
+        function renderMap(lapsToRender) {
+            polylineLayerGroup.clearLayers();
+            Object.values(lapMarkers).forEach(m => map.removeLayer(m));
+            lapMarkers = {};
+            let allLatLngs = [];
+
+            lapsToRender.forEach(item => {
+                const { lap, index } = item;
+                const color = COLORS[index % COLORS.length];
+                const latlngs = lap.map(d => [d.lat, d.lon]);
+                allLatLngs = allLatLngs.concat(latlngs);
+
+                L.polyline(latlngs, { color: color, weight: 4, opacity: 0.85 }).addTo(polylineLayerGroup);
+                
+                const startPt = lap[0];
+                lapMarkers[index] = L.circleMarker([startPt.lat, startPt.lon], { 
+                    radius: 5, color: '#fff', weight: 2, fillColor: color, fillOpacity: 1 
+                }).addTo(polylineLayerGroup);
+            });
+
+            if (allLatLngs.length > 0) {
+                const firstPt = allLatLngs[0];
+                if (!currentPositionMarker) {
+                    currentPositionMarker = L.circleMarker(firstPt, { 
+                        radius: 8, color: '#fff', fillColor: '#facc15', fillOpacity: 1, weight: 2,
+                        className: 'drop-shadow-md'
+                    }).addTo(map);
+                } else {
+                    currentPositionMarker.setLatLng(firstPt);
+                }
+            }
+        }
+
+        function renderCharts(lapsToRender) {
+            let tracesDist = [], tracesTime = [];
+            const config = { responsive: true, displayModeBar: false };
+            const bg = "transparent";
+            const fontColor = isDarkMode ? "#cbd5e1" : "#475569";
+            const gridColor = isDarkMode ? "#334155" : "#e2e8f0";
+            const axisFont = { family: 'Inter, sans-serif', size: 11, color: fontColor };
+            
+            const layoutCommon = {
+                margin: { t: 30, r: 20, l: 40, b: 35 }, hovermode: 'closest', showlegend: true,
+                legend: { orientation: 'h', y: 1.15, x: 1, xanchor: 'right', font: axisFont },
+                plot_bgcolor: bg, paper_bgcolor: bg, font: { family: 'Inter, sans-serif', color: fontColor },
+                yaxis: { title: { text: 'Speed (km/h)', font: axisFont }, gridcolor: gridColor, tickfont: axisFont, fixedrange: false },
+                hoverlabel: { bgcolor: isDarkMode ? '#1e293b' : '#ffffff', font: { color: isDarkMode ? '#f8fafc' : '#0f172a' }, bordercolor: gridColor }
+            };
+
+            lapsToRender.forEach((item) => {
+                const { lap, index } = item;
+                const color = COLORS[index % COLORS.length];
+                const rawSpeeds = lap.map(d => d.speed);
+                const smoothedSpeeds = smoothData(rawSpeeds, currentSmoothing);
+
+                tracesDist.push({
+                    x: lap.map(d => d.lapDistance), y: smoothedSpeeds, customdata: lap.map(d => d.rowId),
+                    mode: 'lines', name: `Lap ${index + 1}`, line: { width: 2.5, color: color },
+                    hovertemplate: '<b>%{y:.1f} km/h</b><br>Dist: %{x:.1f} m<extra></extra>'
+                });
+
+                const lapStartTime = lap[0].time;
+                tracesTime.push({
+                    x: lap.map(d => d.time - lapStartTime), y: smoothedSpeeds, customdata: lap.map(d => d.rowId),
+                    mode: 'lines', name: `Lap ${index + 1}`, line: { width: 2.5, color: color },
+                    hovertemplate: '<b>%{y:.1f} km/h</b><br>Time: %{x:.2f} s<extra></extra>'
+                });
+            });
+
+            const cursorTrace = { x: [], y: [], mode: 'markers', type: 'scatter', name: 'Tracker', marker: { color: [], size: 12, line: { color: '#fff', width: 2 } }, hoverinfo: 'none', showlegend: false };
+            tracesDist.push(cursorTrace); 
+            tracesTime.push(cursorTrace);
+
+            Plotly.newPlot('chart-speed-dist', tracesDist, { ...layoutCommon, title: { text: 'Speed vs Distance', font: {size: 14, weight: 700}, x: 0 }, xaxis: { title: { text: 'Distance (m)', font: axisFont }, gridcolor: gridColor, tickfont: axisFont } }, config);
+            Plotly.newPlot('chart-speed-time', tracesTime, { ...layoutCommon, title: { text: 'Speed vs Time', font: {size: 14, weight: 700}, x: 0 }, xaxis: { title: { text: 'Time (s)', font: axisFont }, gridcolor: gridColor, tickfont: axisFont } }, config);
+
+            setupInteractionProfiles('chart-speed-dist', 'chart-speed-time');
+            setupZoomSyncEngine('chart-speed-dist', 'chart-speed-time');
+        }
+
+        function setupZoomSyncEngine(id1, id2) {
+            const g1 = document.getElementById(id1);
+            const g2 = document.getElementById(id2);
+            const synchronizeZoom = (source, target, eventData) => {
+                if (isRelayouting) return;
+                const lapsToRender = getSelectedLaps();
+                if (lapsToRender.length === 0) return;
+                const mainLap = lapsToRender[0].lap;
+                let updateObj = {};
+                let executionRequired = false;
+
+                if (eventData['yaxis.range[0]'] || eventData['yaxis.autorange']) {
+                    executionRequired = true;
+                    if (eventData['yaxis.autorange']) updateObj['yaxis.autorange'] = true;
+                    else { updateObj['yaxis.range[0]'] = eventData['yaxis.range[0]']; updateObj['yaxis.range[1]'] = eventData['yaxis.range[1]']; }
+                }
+                
+                if (eventData['xaxis.range[0]'] !== undefined || eventData['xaxis.autorange']) {
+                    executionRequired = true;
+                    if (eventData['xaxis.autorange']) updateObj['xaxis.autorange'] = true;
+                    else {
+                        let x_start = eventData['xaxis.range[0]'];
+                        let x_end = eventData['xaxis.range[1]'];
+                        if (x_start > x_end) [x_start, x_end] = [x_end, x_start];
+                        
+                        let new_start, new_end;
+                        const lapStartTime = mainLap[0].time;
+                        if (source.id === id1) { 
+                            let startPoint = mainLap.find(p => p.lapDistance >= x_start) || mainLap[0];
+                            let endPoint = mainLap.find(p => p.lapDistance >= x_end) || mainLap[mainLap.length - 1]; 
+                            new_start = Math.max(0, startPoint.time - lapStartTime);
+                            new_end = Math.min(mainLap.duration, endPoint.time - lapStartTime);
+                        } else { 
+                            let startPoint = mainLap.find(p => (p.time - lapStartTime) >= x_start) || mainLap[0];
+                            let endPoint = mainLap.find(p => (p.time - lapStartTime) >= x_end) || mainLap[mainLap.length - 1];
+                            new_start = Math.max(0, startPoint.lapDistance);
+                            new_end = Math.min(mainLap.maxDistance, endPoint.lapDistance);
+                        }
+                        updateObj['xaxis.range[0]'] = new_start;
+                        updateObj['xaxis.range[1]'] = new_end;
+                    }
+                }
+                if (executionRequired) {
+                    isRelayouting = true;
+                    Plotly.relayout(target, updateObj).then(() => { isRelayouting = false; }).catch(() => { isRelayouting = false; });
+                }
+            };
+            g1.on('plotly_relayout', (data) => synchronizeZoom(g1, g2, data));
+            g2.on('plotly_relayout', (data) => synchronizeZoom(g2, g1, data));
+        }
+
+        function setupInteractionProfiles(id1, id2) {
+            const graph1 = document.getElementById(id1);
+            const graph2 = document.getElementById(id2);
+            
+            const handlePlotClick = (eventData) => {
+                if (!eventData || !eventData.points || eventData.points.length === 0) return;
+                const point = eventData.points[0];
+                if (point.customdata === undefined) return; 
+                const dataPoint = rawData[point.customdata];
+                if (!dataPoint) return;
+                pausePlayback();
+                const matchedLap = lapsData[dataPoint.lap - 1];
+                if (!matchedLap) return;
+                if (playbackState.mode === 'distance') manualSeek(dataPoint.lapDistance);
+                else manualSeek(dataPoint.time - matchedLap[0].time);
+            };
+            
+            graph1.on('plotly_click', handlePlotClick);
+            graph2.on('plotly_click', handlePlotClick);
+            
+            const handlePlotHover = (eventData) => {
+                 if (!eventData || !eventData.points) return;
+                 const point = eventData.points[0];
+                 if (point.customdata === undefined) return;
+                 const pt = rawData[point.customdata];
+                 if (pt && currentPositionMarker) currentPositionMarker.setLatLng([pt.lat, pt.lon]);
+            };
+            graph1.on('plotly_hover', handlePlotHover);
+            graph2.on('plotly_hover', handlePlotHover);
+        }
+
+        function handleVideoUpload(event) {
+            const file = event.target.files[0];
+            if (!file) return;
+            document.getElementById('video-btn-text').textContent = file.name.substring(0, 15) + '...';
+            document.getElementById('video-btn-text').classList.add('text-brand-600', 'font-bold');
+            videoBlobUrl = URL.createObjectURL(file);
+            if (lapsData.length > 0) updateVisualization();
+        }
+
+        function updateVisualization() {
+            const lapsToRender = getSelectedLaps();
+            renderCharts(lapsToRender);
+            renderMap(lapsToRender);
+            renderVideoMonitorGrid(lapsToRender);
+            updateScrubberScalingBoundaries(lapsToRender);
+        }
+
+        function renderVideoMonitorGrid(lapsToRender) {
+            const grid = document.getElementById('video-grid');
+            const section = document.getElementById('video-section');
+            if (!videoBlobUrl) { section.classList.add('hidden'); return; }
+            
+            section.classList.remove('hidden');
+            grid.innerHTML = '';
+            videoElements = [];
+            section.style.height = `${Math.round(currentVideoSize * 9 / 16) + 50}px`;
+            
+            let videosToShow = lapsToRender;
+            if (selectedLapIndices.has('all') && lapsToRender.length > 4) {
+                videosToShow = lapsToRender.slice(0, 4);
+                const alertMessage = document.createElement('div');
+                alertMessage.className = "flex-shrink-0 text-gray-500 text-xs w-[120px] text-center px-2 font-medium";
+                alertMessage.innerText = `Showing first 4 of ${lapsToRender.length} videos. Filter laps to view others.`;
+                grid.appendChild(alertMessage);
+            }
+
+            videosToShow.forEach(item => {
+                const { lap, index } = item;
+                const color = COLORS[index % COLORS.length];
+                
+                const wrapper = document.createElement('div');
+                wrapper.className = "video-card relative bg-black rounded-xl overflow-hidden flex-shrink-0 border-2 transition-all shadow-lg";
+                wrapper.style.borderColor = color;
+                wrapper.style.width = `${currentVideoSize}px`;
+                wrapper.style.height = `${Math.round(currentVideoSize * 9 / 16)}px`;
+                
+                const video = document.createElement('video');
+                video.src = videoBlobUrl; 
+                video.muted = true; video.preload = "auto"; video.playsInline = true; video.controls = false;
+                video.addEventListener('loadeddata', () => { if (video.videoWidth === 0) wrapper.classList.add('has-error'); });
+                video.addEventListener('error', () => { wrapper.classList.add('has-error'); });
+                
+                const errorOverlay = document.createElement('div');
+                errorOverlay.className = "error-overlay absolute inset-0 flex flex-col items-center justify-center bg-gray-950/95 text-white text-center p-4 z-20";
+                errorOverlay.innerHTML = `<i class="ph ph-warning-octagon text-3xl text-red-500 mb-2"></i><p class="text-sm font-bold">Playback Error</p><p class="text-[10px] text-gray-400 mt-1">Check codec support.</p>`;
+                
+                const label = document.createElement('div');
+                label.className = "absolute top-2 left-2 bg-black/80 backdrop-blur text-white text-xs px-2.5 py-1 rounded-lg font-bold z-10 flex items-center gap-1.5 shadow-sm border border-white/10";
+                label.innerHTML = `<div class="w-2.5 h-2.5 rounded-full" style="background-color: ${color}"></div>Lap ${index + 1}`;
+                
+                wrapper.appendChild(video); wrapper.appendChild(errorOverlay); wrapper.appendChild(label);
+                grid.appendChild(wrapper);
+                
+                videoElements.push({ lapIndex: index, element: video, lapData: lap, lastIndex: 0 });
+            });
+            syncVideosToStateTimeline(true);
+        }
+
+        function updateScrubberScalingBoundaries(lapsToRender) {
+            if (lapsToRender.length === 0) return;
+            let maxVal = 0;
+            if (playbackState.mode === 'distance') {
+                maxVal = Math.max(...lapsToRender.map(l => l.lap.maxDistance));
+                document.getElementById('scrubber-total').innerText = Math.round(maxVal) + " m";
+            } else {
+                maxVal = Math.max(...lapsToRender.map(l => l.lap.duration));
+                document.getElementById('scrubber-total').innerText = formatTime(maxVal);
+            }
+            playbackState.maxValue = maxVal;
+            const scrubber = document.getElementById('main-scrubber');
+            scrubber.max = maxVal;
+            scrubber.value = playbackState.currentValue;
+        }
+
+        function updateVideoPlaybackRates() {
+            if (!playbackState.isPlaying) return;
+            videoElements.forEach(vObj => {
+                if (playbackState.mode === 'time') {
+                    vObj.element.playbackRate = playbackState.baseSpeed;
+                } else {
+                    const lap = vObj.lapData;
+                    let pt = null;
+                    for (let i = vObj.lastIndex; i < lap.length; i++) {
+                        if (lap[i].lapDistance >= playbackState.currentValue) { pt = lap[i]; vObj.lastIndex = i; break; }
+                    }
+                    if (pt && pt.speedMS > 0.5) { 
+                        const targetSpeed = playbackState.distanceSimSpeed * playbackState.baseSpeed;
+                        let rate = targetSpeed / pt.speedMS;
+                        if (rate > 5.0 || rate < 0.15) vObj.element.playbackRate = 1.0; 
+                        else vObj.element.playbackRate = rate;
+                    } else { vObj.element.playbackRate = 1.0; }
+                }
+            });
+        }
+
+        function syncVideosToStateTimeline(forceSeek) {
+            const lbl = document.getElementById('scrubber-current');
+            if (playbackState.mode === 'distance') lbl.innerText = Math.round(playbackState.currentValue) + " m";
+            else lbl.innerText = formatTime(playbackState.currentValue);
+
+            if (videoElements.length > 0) {
+                videoElements.forEach(vObj => {
+                    const lap = vObj.lapData;
+                    let targetFileTime = 0;
+                    if (playbackState.mode === 'distance') {
+                        let pt = null;
+                        for (let i = vObj.lastIndex; i < lap.length; i++) {
+                            if (lap[i].lapDistance >= playbackState.currentValue) { pt = lap[i]; vObj.lastIndex = i; break; }
+                        }
+                        if (!pt) { vObj.lastIndex = 0; pt = lap.find(p => p.lapDistance >= playbackState.currentValue); }
+                        if (pt) targetFileTime = pt.time;
+                        else if (playbackState.currentValue >= lap.maxDistance) targetFileTime = lap[lap.length - 1].time; 
+                    } else {
+                        targetFileTime = lap[0].time + playbackState.currentValue;
+                        if (targetFileTime > lap[lap.length - 1].time) targetFileTime = lap[lap.length - 1].time; 
+                    }
+                    const diff = Math.abs(vObj.element.currentTime - targetFileTime);
+                    if (forceSeek || diff > (playbackState.mode === 'distance' ? 0.15 : 0.35)) {
+                        vObj.element.currentTime = targetFileTime;
+                    }
+                });
+            }
+
+            const laps = getSelectedLaps();
+            const cursorX = [], cursorY = [], cursorXTime = [], cursorColors = [];
+            
+            laps.forEach(item => {
+               const thisLap = item.lap;
+               const index = item.index;
+               const color = COLORS[index % COLORS.length];
+               let pt = null;
+               
+               if (playbackState.mode === 'distance') pt = thisLap.find(point => point.lapDistance >= playbackState.currentValue);
+               else pt = thisLap.find(point => (point.time - thisLap[0].time) >= playbackState.currentValue); 
+
+               if (pt) {
+                   if (lapMarkers[index]) lapMarkers[index].setLatLng([pt.lat, pt.lon]);
+                   cursorX.push(pt.lapDistance); cursorY.push(pt.speed); cursorXTime.push(pt.time - thisLap[0].time); cursorColors.push(color);
+                   
+                   if (item === laps[0]) {
+                       document.getElementById('live-speed').innerText = pt.speed.toFixed(1);
+                       document.getElementById('live-time').innerText = formatTime(pt.time);
+                       document.getElementById('live-lap').innerText = pt.lap;
+                       if (currentPositionMarker) currentPositionMarker.setLatLng([pt.lat, pt.lon]);
+                   }
+               }
+            });
+
+            const distGraph = document.getElementById('chart-speed-dist');
+            if (distGraph && distGraph.data && distGraph.data.length > 0) {
+                Plotly.restyle('chart-speed-dist', { x: [cursorX], y: [cursorY], 'marker.color': [cursorColors] }, [distGraph.data.length - 1]);
+            }
+            const timeGraph = document.getElementById('chart-speed-time');
+            if (timeGraph && timeGraph.data && timeGraph.data.length > 0) {
+                Plotly.restyle('chart-speed-time', { x: [cursorXTime], y: [cursorY], 'marker.color': [cursorColors] }, [timeGraph.data.length - 1]);
+            }
+        }
+
+        function playbackLoop() {
+            if (!playbackState.isPlaying) return;
+            const now = performance.now();
+            const dt = (now - playbackState.lastFrameTime) / 1000; 
+            playbackState.lastFrameTime = now;
+            
+            if (playbackState.mode === 'time') playbackState.currentValue += (dt * playbackState.baseSpeed);
+            else playbackState.currentValue += (playbackState.distanceSimSpeed * playbackState.baseSpeed * dt); 
+            
+            if (playbackState.currentValue > playbackState.maxValue) { 
+                playbackState.currentValue = 0; videoElements.forEach(v => v.lastIndex = 0); 
+            }
+            
+            document.getElementById('main-scrubber').value = playbackState.currentValue;
+            syncVideosToStateTimeline(false);
+            updateVideoPlaybackRates();
+            playbackState.animFrameId = requestAnimationFrame(playbackLoop);
+        }
+
+        function startPlayback() {
+            if (playbackState.isPlaying) return;
+            if (playbackState.currentValue >= playbackState.maxValue) { playbackState.currentValue = 0; videoElements.forEach(v => v.lastIndex = 0); }
+            videoElements.forEach(v => v.element.play().catch(e => console.log("Engine sync suppress drop")));
+            playbackState.isPlaying = true;
+            playbackState.lastFrameTime = performance.now();
+            document.getElementById('play-btn').innerHTML = '<i class="ph-fill ph-pause text-2xl"></i>';
+            requestAnimationFrame(playbackLoop);
+        }
+
+        function pausePlayback() {
+            playbackState.isPlaying = false;
+            cancelAnimationFrame(playbackState.animFrameId);
+            document.getElementById('play-btn').innerHTML = '<i class="ph-fill ph-play text-2xl ml-1"></i>';
+            videoElements.forEach(v => v.element.pause());
+        }
+
+        function togglePlayback() {
+            if (playbackState.isPlaying) pausePlayback(); else startPlayback();
+        }
+
+        function manualSeek(val) {
+            playbackState.currentValue = val; videoElements.forEach(v => v.lastIndex = 0); syncVideosToStateTimeline(true);
+        }
+
+        function stepFrame(seconds) {
+            pausePlayback();
+            playbackState.currentValue += seconds;
+            if (playbackState.currentValue < 0) playbackState.currentValue = 0;
+            if (playbackState.currentValue > playbackState.maxValue) playbackState.currentValue = playbackState.maxValue;
+            document.getElementById('main-scrubber').value = playbackState.currentValue;
+            syncVideosToStateTimeline(true);
+        }
+
+        function setPlaybackMode(mode) {
+            playbackState.mode = mode;
+            const btnDist = document.getElementById('mode-dist');
+            const btnTime = document.getElementById('mode-time');
+            const activeClass = "px-4 py-1.5 text-xs font-bold rounded-md bg-white dark:bg-gray-700 text-brand-600 dark:text-brand-400 shadow-sm transition-all";
+            const inactiveClass = "px-4 py-1.5 text-xs font-bold rounded-md text-gray-500 dark:text-gray-400 hover:text-gray-800 dark:hover:text-gray-200 transition-all";
+            
+            if (mode === 'distance') { btnDist.className = activeClass; btnTime.className = inactiveClass; }
+            else { btnTime.className = activeClass; btnDist.className = inactiveClass; }
+            
+            pausePlayback();
+            updateScrubberScalingBoundaries(getSelectedLaps());
+            playbackState.currentValue = 0;
+            videoElements.forEach(v => v.lastIndex = 0);
+            syncVideosToStateTimeline(true);
+        }
+
+        function getSelectedLaps() {
+            let laps = [];
+            if (selectedLapIndices.has('all')) { lapsData.forEach((lap, i) => laps.push({ lap, index: i })); } 
+            else { selectedLapIndices.forEach(idx => { if (lapsData[idx]) laps.push({ lap: lapsData[idx], index: idx }); }); }
+            laps.sort((a, b) => a.index - b.index);
+            return laps;
+        }
+    </script>
+</body>
+</html>
