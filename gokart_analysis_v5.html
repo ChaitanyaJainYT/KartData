@@ -44,6 +44,7 @@
     <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
     <script src="https://cdn.plot.ly/plotly-2.27.0.min.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/PapaParse/5.4.1/papaparse.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/mp4box@0.5.2/dist/mp4box.all.min.js"></script>
     <script src="https://unpkg.com/@phosphor-icons/web"></script>
 
     <style>
@@ -114,8 +115,8 @@
             </div>
             
             <div class="flex gap-3 items-center">
-                <label class="cursor-pointer bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-600 hover:border-gray-400 dark:hover:border-gray-500 hover:shadow-sm text-gray-700 dark:text-gray-200 px-4 py-2 rounded-xl text-sm font-semibold transition-all flex items-center gap-2 active:scale-95">
-                    <i class="ph ph-video-camera text-lg text-gray-500 dark:text-gray-400"></i>
+                <label id="video-upload-label" class="cursor-pointer bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-600 hover:border-gray-400 dark:hover:border-gray-500 hover:shadow-sm text-gray-700 dark:text-gray-200 px-4 py-2 rounded-xl text-sm font-semibold transition-all flex items-center gap-2 active:scale-95">
+                    <i id="video-upload-icon" class="ph ph-video-camera text-lg text-gray-500 dark:text-gray-400"></i>
                     <span id="video-btn-text">Add Video</span>
                     <input type="file" id="video-upload" accept="video/*" class="hidden" />
                 </label>
@@ -125,6 +126,16 @@
                     Upload CSV
                     <input type="file" id="csv-upload" accept=".csv" class="hidden" />
                 </label>
+
+                <label class="flex items-center gap-2 rounded-xl border border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-800 px-3 py-2 text-sm font-medium text-gray-700 dark:text-gray-200">
+                    <input type="checkbox" id="extract-telemetry-toggle" class="rounded text-brand-600 focus:ring-0" checked>
+                    <span>Extract from video</span>
+                </label>
+
+                <button id="download-csv-btn" class="hidden items-center gap-2 rounded-xl border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 px-3 py-2 text-sm font-semibold text-gray-700 dark:text-gray-200 transition-all hover:bg-gray-50 dark:hover:bg-gray-700">
+                    <i class="ph ph-download-simple text-base"></i>
+                    Download CSV
+                </button>
 
                 <div class="w-px h-6 bg-gray-200 dark:bg-gray-700 mx-1"></div>
 
@@ -331,6 +342,11 @@
 
         let videoBlobUrl = null;
         let videoElements = []; 
+        let telemetryCsvText = "";
+        let isUploadingVideo = false;
+        let telemetryDownloadName = "telemetry.csv";
+        let telemetrySource = null;
+        let extractMetadataEnabled = true;
         let playbackState = {
             isPlaying: false,
             mode: 'distance', 
@@ -398,6 +414,10 @@
         function setupEventListeners() {
             document.getElementById('csv-upload').addEventListener('change', handleFileUpload);
             document.getElementById('video-upload').addEventListener('change', handleVideoUpload);
+            document.getElementById('extract-telemetry-toggle').addEventListener('change', (e) => {
+                extractMetadataEnabled = e.target.checked;
+            });
+            document.getElementById('download-csv-btn').addEventListener('click', downloadTelemetryCsv);
             
             document.getElementById('smoothing-slider').addEventListener('input', (e) => {
                 currentSmoothing = parseInt(e.target.value);
@@ -514,14 +534,262 @@
             const file = event.target.files[0];
             if (!file) return;
             document.getElementById('filename-display').textContent = file.name;
-            Papa.parse(file, {
+            telemetrySource = 'csv';
+            telemetryDownloadName = file.name.replace(/\.[^/.]+$/, "") + "_telemetry.csv";
+            telemetryCsvText = "";
+            document.getElementById('download-csv-btn').classList.add('hidden');
+
+            const reader = new FileReader();
+            reader.onload = (e) => {
+                telemetryCsvText = e.target.result;
+                document.getElementById('download-csv-btn').classList.remove('hidden');
+                Papa.parse(file, {
+                    header: true, dynamicTyping: true, skipEmptyLines: true,
+                    complete: (results) => {
+                        if (results.errors.length > 0) console.warn("CSV Errors:", results.errors);
+                        processIncomingCSV(results.data);
+                    },
+                    error: (err) => alert("Parsing Failure: " + err.message)
+                });
+            };
+            reader.onerror = () => alert("Unable to read CSV file.");
+            reader.readAsText(file);
+        }
+
+        function downloadTelemetryCsv() {
+            if (!telemetryCsvText) return;
+            const blob = new Blob([telemetryCsvText], { type: 'text/csv;charset=utf-8;' });
+            const url = URL.createObjectURL(blob);
+            const link = document.createElement('a');
+            link.href = url;
+            link.download = telemetryDownloadName;
+            link.click();
+            URL.revokeObjectURL(url);
+        }
+
+        async function extractTelemetryFromVideo(file) {
+            if (!window.MP4Box) {
+                alert("MP4Box is not available in the browser.");
+                return;
+            }
+
+            const fileNameBase = file.name.replace(/\.[^/.]+$/, "");
+            document.getElementById('filename-display').textContent = `Extracting ${file.name}`;
+            document.getElementById('download-csv-btn').classList.add('hidden');
+
+            const sensors = { ACCL: [], GYRO: [], GPS9: [], GRAV: [], CORI: [] };
+            let gpmdTrackId = null;
+            let timescale = 1000;
+
+            const mp4box = MP4Box.createFile();
+            const extractionPromise = new Promise((resolve, reject) => {
+                mp4box.onReady = (info) => {
+                    const track = info.tracks.find(t => t.codec === 'gpmd');
+                    if (!track) {
+                        reject(new Error('No GPMD track found in the video.'));
+                        return;
+                    }
+                    gpmdTrackId = track.id;
+                    timescale = track.timescale;
+                    mp4box.setExtractionOptions(gpmdTrackId);
+                    mp4box.start();
+                };
+
+                mp4box.onError = (error) => reject(error);
+                mp4box.onSamples = (id, user, samples) => {
+                    if (id !== gpmdTrackId) return;
+                    samples.forEach(sample => {
+                        const ctsMs = (sample.cts / timescale) * 1000;
+                        const durMs = (sample.duration / timescale) * 1000;
+                        parseGPMD(sample.data, ctsMs, durMs, sensors);
+                    });
+                };
+
+                const reader = file.stream().getReader();
+                let offset = 0;
+
+                const readChunk = async () => {
+                    const { done, value } = await reader.read();
+                    if (done) {
+                        mp4box.flush();
+                        resolve();
+                        return;
+                    }
+                    const buffer = value.buffer;
+                    buffer.fileStart = offset;
+                    offset += buffer.byteLength;
+                    mp4box.appendBuffer(buffer);
+                    await readChunk();
+                };
+
+                readChunk().catch(reject);
+            });
+
+            try {
+                await extractionPromise;
+            } catch (error) {
+                console.error(error);
+                alert(error.message || 'Telemetry extraction failed.');
+                return;
+            }
+
+            telemetryCsvText = buildCombinedTelemetryCsv(sensors, fileNameBase);
+            telemetrySource = 'video';
+            telemetryDownloadName = `${fileNameBase}_Full_Telemetry.csv`;
+            document.getElementById('download-csv-btn').classList.remove('hidden');
+            document.getElementById('filename-display').textContent = `${fileNameBase} • extracted`;
+
+            Papa.parse(telemetryCsvText, {
                 header: true, dynamicTyping: true, skipEmptyLines: true,
                 complete: (results) => {
-                    if (results.errors.length > 0) console.warn("CSV Errors:", results.errors);
+                    if (results.errors.length > 0) console.warn('Telemetry extraction CSV warnings:', results.errors);
                     processIncomingCSV(results.data);
                 },
-                error: (err) => alert("Parsing Failure: " + err.message)
+                error: (err) => alert('Telemetry parsing failed: ' + err.message)
             });
+        }
+
+        function parseGPMD(data, baseCts, duration, sensors) {
+            const view = new DataView(data.buffer, data.byteOffset, data.byteLength);
+            const buf = new Uint8Array(data.buffer, data.byteOffset, data.byteLength);
+            let currentTemp = null;
+
+            const recursive = (start, end) => {
+                let i = start;
+                while (i <= end - 8) {
+                    const fourcc = String.fromCharCode(buf[i], buf[i + 1], buf[i + 2], buf[i + 3]);
+                    const type = String.fromCharCode(buf[i + 4]);
+                    const size = buf[i + 5];
+                    const count = view.getUint16(i + 6);
+                    const pSize = size * count;
+                    const pOff = i + 8;
+
+                    if (fourcc === 'DEVC' || fourcc === 'STRM') {
+                        recursive(pOff, pOff + pSize);
+                    } else if (fourcc === 'TAMP') {
+                        currentTemp = view.getInt16(pOff) / 100;
+                    } else if (fourcc === 'ACCL') {
+                        const isFloat = type === 'f';
+                        const bytesPerSample = isFloat ? 12 : 6;
+                        const samples = Math.floor(pSize / bytesPerSample);
+                        for (let c = 0; c < samples; c++) {
+                            const o = pOff + (c * bytesPerSample);
+                            sensors.ACCL.push({
+                                ts: baseCts + (c * (duration / samples)),
+                                x: isFloat ? view.getFloat32(o) : view.getInt16(o) / 100,
+                                y: isFloat ? view.getFloat32(o + 4) : view.getInt16(o + 2) / 100,
+                                z: isFloat ? view.getFloat32(o + 8) : view.getInt16(o + 4) / 100,
+                                temp: currentTemp
+                            });
+                        }
+                    } else if (fourcc === 'GYRO') {
+                        const isFloat = type === 'f';
+                        const bytesPerSample = isFloat ? 12 : 6;
+                        const samples = Math.floor(pSize / bytesPerSample);
+                        for (let c = 0; c < samples; c++) {
+                            const o = pOff + (c * bytesPerSample);
+                            sensors.GYRO.push({
+                                ts: baseCts + (c * (duration / samples)),
+                                x: isFloat ? view.getFloat32(o) : view.getInt16(o) / 1000,
+                                y: isFloat ? view.getFloat32(o + 4) : view.getInt16(o + 2) / 1000,
+                                z: isFloat ? view.getFloat32(o + 8) : view.getInt16(o + 4) / 1000,
+                                temp: currentTemp
+                            });
+                        }
+                    } else if (fourcc === 'GRAV') {
+                        const isFloat = type === 'f';
+                        const bytesPerSample = isFloat ? 12 : 6;
+                        const samples = Math.floor(pSize / bytesPerSample);
+                        for (let c = 0; c < samples; c++) {
+                            const o = pOff + (c * bytesPerSample);
+                            sensors.GRAV.push({
+                                ts: baseCts + (c * (duration / samples)),
+                                x: isFloat ? view.getFloat32(o) : view.getInt16(o) / 4096,
+                                y: isFloat ? view.getFloat32(o + 4) : view.getInt16(o + 2) / 4096,
+                                z: isFloat ? view.getFloat32(o + 8) : view.getInt16(o + 4) / 4096
+                            });
+                        }
+                    } else if (fourcc === 'CORI') {
+                        const isFloat = type === 'f';
+                        const bytesPerSample = isFloat ? 16 : 8;
+                        const samples = Math.floor(pSize / bytesPerSample);
+                        for (let c = 0; c < samples; c++) {
+                            const o = pOff + (c * bytesPerSample);
+                            sensors.CORI.push({
+                                ts: baseCts + (c * (duration / samples)),
+                                w: isFloat ? view.getFloat32(o) : view.getInt16(o) / 32767,
+                                x: isFloat ? view.getFloat32(o + 4) : view.getInt16(o + 2) / 32767,
+                                y: isFloat ? view.getFloat32(o + 8) : view.getInt16(o + 4) / 32767,
+                                z: isFloat ? view.getFloat32(o + 12) : view.getInt16(o + 6) / 32767
+                            });
+                        }
+                    } else if (fourcc === 'GPS9') {
+                        const gpsSamples = Math.floor(pSize / 32);
+                        for (let c = 0; c < gpsSamples; c++) {
+                            const o = pOff + (c * 32);
+                            sensors.GPS9.push({
+                                ts: baseCts + (c * (duration / gpsSamples)),
+                                lat: view.getInt32(o) / 10000000,
+                                lon: view.getInt32(o + 4) / 10000000,
+                                alt: view.getInt32(o + 8) / 1000,
+                                speed2d: view.getInt32(o + 12) / 1000,
+                                speed3d: view.getInt32(o + 16) / 1000,
+                                days: view.getUint32(o + 20),
+                                secs: view.getUint32(o + 24) / 1000,
+                                dop: view.getUint16(o + 28) / 100,
+                                fix: view.getUint16(o + 30),
+                                altSys: 'MSLV'
+                            });
+                        }
+                    }
+
+                    i += 8 + Math.ceil(pSize / 4) * 4;
+                }
+            };
+
+            recursive(0, data.byteLength);
+        }
+
+        function buildCombinedTelemetryCsv(sensors, selectedFileName) {
+            const allTs = new Set();
+            Object.values(sensors).forEach(arr => arr.forEach(point => allTs.add(point.ts.toFixed(6))));
+            const sortedTs = Array.from(allTs).sort((a, b) => parseFloat(a) - parseFloat(b));
+            const maps = {};
+            Object.keys(sensors).forEach(key => {
+                maps[key] = new Map(sensors[key].map(point => [point.ts.toFixed(6), point]));
+            });
+
+            let csv = 'cts,date,ACCL_x,ACCL_y,ACCL_z,temp_ACCL,GYRO_x,GYRO_y,GYRO_z,temp_GYRO,GRAV_x,GRAV_y,GRAV_z,CORI_w,CORI_x,CORI_y,CORI_z,GPS (Lat.) [deg],GPS (Long.) [deg],GPS (Alt.) [m],GPS (2D) [m/s],GPS (3D) [m/s],GPS (days) [deg],GPS (secs) [s],GPS (DOP) [deg],GPS (fix) [deg],altitude system\n';
+            const gpsBaseDate = new Date(Date.UTC(2000, 0, 1));
+            let currentDateStr = '';
+
+            sortedTs.forEach(ts => {
+                const accl = maps.ACCL.get(ts) || {};
+                const gyro = maps.GYRO.get(ts) || {};
+                const grav = maps.GRAV.get(ts) || {};
+                const cori = maps.CORI.get(ts) || {};
+                const gps = maps.GPS9.get(ts) || {};
+
+                if (gps.days !== undefined && gps.secs !== undefined) {
+                    const d = new Date(gpsBaseDate.getTime() + (gps.days * 86400000) + (gps.secs * 1000));
+                    currentDateStr = d.toISOString();
+                }
+
+                const row = [
+                    ts,
+                    currentDateStr,
+                    accl.x ?? '', accl.y ?? '', accl.z ?? '', accl.temp ?? '',
+                    gyro.x ?? '', gyro.y ?? '', gyro.z ?? '', gyro.temp ?? '',
+                    grav.x ?? '', grav.y ?? '', grav.z ?? '',
+                    cori.w ?? '', cori.x ?? '', cori.y ?? '', cori.z ?? '',
+                    gps.lat ?? '', gps.lon ?? '', gps.alt ?? '',
+                    gps.speed2d ?? '', gps.speed3d ?? '',
+                    gps.days ?? '', gps.secs ?? '', gps.dop ?? '', gps.fix ?? '', gps.altSys ?? ''
+                ];
+                csv += row.join(',') + '\n';
+            });
+
+            return csv;
         }
 
         function processIncomingCSV(data) {
@@ -909,12 +1177,43 @@
             graph2.on('plotly_hover', handlePlotHover);
         }
 
-        function handleVideoUpload(event) {
+        function setVideoUploadState(isLoading, labelText) {
+            isUploadingVideo = isLoading;
+            const label = document.getElementById('video-upload-label');
+            const icon = document.getElementById('video-upload-icon');
+            const text = document.getElementById('video-btn-text');
+            if (!label || !icon || !text) return;
+
+            label.classList.toggle('opacity-80', isLoading);
+            icon.classList.toggle('animate-spin', isLoading);
+            if (isLoading) {
+                icon.className = 'ph ph-spinner-gap animate-spin text-lg text-brand-600';
+                text.textContent = labelText || 'Uploading...';
+                text.classList.add('text-brand-600', 'font-bold');
+            } else {
+                icon.className = 'ph ph-video-camera text-lg text-gray-500 dark:text-gray-400';
+                text.classList.remove('text-brand-600', 'font-bold');
+                text.textContent = 'Add Video';
+            }
+        }
+
+        async function handleVideoUpload(event) {
             const file = event.target.files[0];
             if (!file) return;
-            document.getElementById('video-btn-text').textContent = file.name.substring(0, 15) + '...';
-            document.getElementById('video-btn-text').classList.add('text-brand-600', 'font-bold');
+            setVideoUploadState(true, `${file.name.substring(0, 15)}${file.name.length > 15 ? '...' : ''}`);
             videoBlobUrl = URL.createObjectURL(file);
+
+            const hasCsvUpload = document.getElementById('csv-upload').files && document.getElementById('csv-upload').files.length > 0;
+            try {
+                if (!hasCsvUpload && extractMetadataEnabled) {
+                    await extractTelemetryFromVideo(file);
+                } else {
+                    document.getElementById('download-csv-btn').classList.add('hidden');
+                }
+            } finally {
+                setVideoUploadState(false);
+            }
+
             if (lapsData.length > 0) updateVisualization();
         }
 
