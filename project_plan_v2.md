@@ -34,6 +34,10 @@ Here is the updated architectural blueprint. I have explicitly integrated the sc
 
 # KartData: Rigorous Architectural Blueprint (project_plan.md)
 
+## 0. Project Management
+
+First create a todo.md to keep track of all the steps to be taken and what has been completed. Keep updating the todo.md file as we progress. It should link to the plan file for each task. This will serve as a tracker for what is done and what is left for the different sessions we work on.
+
 ## 1. Project Context & Constraints
 
 * **The Core Problem:** KartData democratizes professional-grade motorsport telemetry by replacing expensive desktop software with a browser-based, interactive dashboard inspired by F1 data centers. It enables karting and track-day drivers to analyze runs and find ultimate pace.
