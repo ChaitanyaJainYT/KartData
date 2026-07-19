@@ -290,6 +290,10 @@
         let currentPositionMarker = null;
         let sortLapsByTime = false;
         let playbackState = { isPlaying: false, mode: 'time', currentValue: 0, maxValue: 0, animFrameId: null, lastFrameTime: 0, baseSpeed: 1.0, distanceSimSpeed: 25.0 };
+        let videoBlobUrl = null;
+        let videoElements = [];
+        let currentVideoSize = 350;
+        let isUploadingVideo = false;
         let gatePoints = [];
         let gateLayer = null;
         let ghostLayer = null;
@@ -340,6 +344,86 @@
                 result.push(sum / count);
             }
             return result;
+        }
+
+        // ============ Video ============
+        function handleVideoUpload(event) {
+            const file = event.target.files[0];
+            if (!file) return;
+            setVideoUploadState(true, file.name.substring(0, 20) + (file.name.length > 20 ? '...' : ''));
+            if (videoBlobUrl) URL.revokeObjectURL(videoBlobUrl);
+            videoBlobUrl = URL.createObjectURL(file);
+            setVideoUploadState(false);
+            event.target.value = '';
+            if (lapsData.length > 0) updateVisualization();
+        }
+
+        function setVideoUploadState(isLoading, labelText) {
+            const label = document.getElementById('video-upload-label');
+            const icon = document.getElementById('video-upload-icon');
+            const text = document.getElementById('video-btn-text');
+            if (isLoading) {
+                label.classList.add('opacity-80');
+                icon.className = 'ph ph-spinner-gap animate-spin text-lg text-brand-500';
+                text.textContent = labelText || 'Loading...';
+            } else {
+                label.classList.remove('opacity-80');
+                icon.className = 'ph ph-video-camera text-lg text-gray-500 dark:text-gray-400';
+                text.textContent = 'Add Video';
+            }
+        }
+
+        function renderVideoMonitorGrid(lapsToRender) {
+            if (!videoBlobUrl || videoElements.length > 0) return;
+            document.getElementById('video-section').classList.remove('hidden');
+            const grid = document.getElementById('video-grid');
+            grid.innerHTML = '';
+            videoElements = [];
+
+            let lapsToShow = lapsToRender;
+            if (selectedLapIndices.has('all') && lapsToRender.length > 4) {
+                lapsToShow = lapsToRender.slice(0, 4);
+                const msg = document.createElement('div');
+                msg.className = 'text-xs text-gray-400 font-medium flex-shrink-0';
+                msg.textContent = 'Showing first 4 of ' + lapsToRender.length + ' videos. Filter laps to view others.';
+                grid.appendChild(msg);
+            }
+
+            lapsToShow.forEach(item => {
+                const { lap, index } = item;
+                const color = COLORS[index % COLORS.length];
+                const wrapper = document.createElement('div');
+                wrapper.className = 'video-card relative bg-black rounded-xl overflow-hidden flex-shrink-0 border-2 transition-all shadow-lg';
+                wrapper.style.borderColor = color;
+                wrapper.style.width = currentVideoSize + 'px';
+                wrapper.style.height = Math.round(currentVideoSize * 9 / 16) + 'px';
+
+                const video = document.createElement('video');
+                video.src = videoBlobUrl;
+                video.muted = true;
+                video.preload = 'auto';
+                video.playsInline = true;
+
+                const overlay = document.createElement('div');
+                overlay.className = 'error-overlay absolute inset-0 flex flex-col items-center justify-center bg-gray-950/95 text-white text-center p-4 z-20';
+                overlay.innerHTML = '<i class="ph ph-warning-octagon text-3xl text-red-500 mb-2"></i><p class="text-sm font-bold">Playback Error</p><p class="text-[10px] text-gray-400 mt-1">Check codec support.</p>';
+
+                const badge = document.createElement('div');
+                badge.className = 'absolute top-2 left-2 bg-black/80 backdrop-blur text-white text-xs px-2.5 py-1 rounded-lg font-bold z-10 flex items-center gap-1.5 shadow-sm border border-white/10';
+                badge.innerHTML = '<div class="w-2.5 h-2.5 rounded-full" style="background-color:' + color + '"></div>Lap ' + (index + 1);
+
+                wrapper.append(video, overlay, badge);
+                grid.appendChild(wrapper);
+
+                video.addEventListener('loadeddata', () => {
+                    if (video.videoWidth === 0) wrapper.classList.add('has-error');
+                });
+                video.addEventListener('error', () => wrapper.classList.add('has-error'));
+
+                videoElements.push({ lapIndex: index, element: video, lapData: lap, lastIndex: 0 });
+            });
+
+            syncVideosToStateTimeline(true);
         }
 
         // ============ Gate Drawing ============
@@ -429,6 +513,10 @@
             gatePoints = [];
             isDrawingGate = false;
             document.getElementById('stepText').textContent = 'Draw a gate line across the track on the map to automatically split and calculate laps.';
+            if (videoBlobUrl) { URL.revokeObjectURL(videoBlobUrl); videoBlobUrl = null; }
+            videoElements = [];
+            document.getElementById('video-section').classList.add('hidden');
+            document.getElementById('video-grid').innerHTML = '';
             const first = data[0];
             const keys = Object.keys(first);
 
@@ -620,6 +708,7 @@
             playbackState.isPlaying = true;
             playbackState.lastFrameTime = performance.now();
             document.querySelector('#play-btn i').className = 'ph-fill ph-pause text-2xl';
+            videoElements.forEach(v => v.element.play().catch(() => {}));
             playbackState.animFrameId = requestAnimationFrame(playbackLoop);
         }
 
@@ -630,6 +719,7 @@
                 playbackState.animFrameId = null;
             }
             document.querySelector('#play-btn i').className = 'ph-fill ph-play text-2xl ml-1';
+            videoElements.forEach(v => v.element.pause());
         }
 
         function togglePlayback() {
@@ -646,6 +736,7 @@
             if (playbackState.currentValue > playbackState.maxValue) playbackState.currentValue = 0;
             document.getElementById('main-scrubber').value = playbackState.currentValue;
             syncVideosToStateTimeline(false);
+            updateVideoPlaybackRates();
             playbackState.animFrameId = requestAnimationFrame(playbackLoop);
         }
 
@@ -729,9 +820,41 @@
             }
             const val = playbackState.currentValue;
             document.getElementById('scrubber-current').textContent = playbackState.mode === 'distance' ? Math.round(val) + ' m' : formatTime(val);
+
+            // Video sync
+            videoElements.forEach(v => {
+                const lapStartTime = v.lapData[0].time;
+                const lastPt = v.lapData[v.lapData.length - 1];
+                let targetFileTime;
+                if (playbackState.mode === 'distance') {
+                    const pt = v.lapData.find(p => p.lapDistance >= playbackState.currentValue) || lastPt;
+                    targetFileTime = pt.time;
+                } else {
+                    targetFileTime = Math.min(lapStartTime + playbackState.currentValue, lastPt.time);
+                }
+                const diff = Math.abs(v.element.currentTime - targetFileTime);
+                const threshold = playbackState.mode === 'distance' ? 0.15 : 0.35;
+                if (forceSeek || diff > threshold) v.element.currentTime = targetFileTime;
+            });
         }
 
-        function updateVideoPlaybackRates() {}
+        function updateVideoPlaybackRates() {
+            if (!playbackState.isPlaying) return;
+            videoElements.forEach(v => {
+                if (playbackState.mode === 'time') {
+                    v.element.playbackRate = playbackState.baseSpeed;
+                } else {
+                    const pt = v.lapData.find(p => p.lapDistance >= playbackState.currentValue);
+                    if (pt && pt.speedMS > 0.5) {
+                        let rate = (playbackState.distanceSimSpeed * playbackState.baseSpeed) / pt.speedMS;
+                        rate = Math.max(0.15, Math.min(5.0, rate));
+                        v.element.playbackRate = rate;
+                    } else {
+                        v.element.playbackRate = 1.0;
+                    }
+                }
+            });
+        }
 
         // ============ Lap List ============
         function renderLapList() {
@@ -1041,6 +1164,7 @@
             renderCharts(lapsToRender);
             renderMap(lapsToRender);
             updateScrubberScalingBoundaries(lapsToRender);
+            renderVideoMonitorGrid(lapsToRender);
         }
 
         // ============ Event Wiring ============
@@ -1052,6 +1176,15 @@
             }
 
             document.getElementById('csv-upload').addEventListener('change', handleFileUpload);
+            document.getElementById('video-upload').addEventListener('change', handleVideoUpload);
+            document.getElementById('video-size-slider').addEventListener('input', function(e) {
+                currentVideoSize = parseInt(e.target.value);
+                document.querySelectorAll('.video-card').forEach(card => {
+                    card.style.width = currentVideoSize + 'px';
+                    card.style.height = Math.round(currentVideoSize * 9 / 16) + 'px';
+                });
+                document.getElementById('video-section').style.height = Math.round(currentVideoSize * 9 / 16) + 60 + 'px';
+            });
             document.getElementById('theme-toggle').addEventListener('click', toggleTheme);
             document.getElementById('draw-gate-btn').addEventListener('click', toggleGateDrawingMode);
             document.getElementById('clear-gate-btn').addEventListener('click', resetGate);
