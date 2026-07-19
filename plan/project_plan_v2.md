@@ -83,7 +83,7 @@ When extracting MP4 files, the generated CSV and the normalized in-memory `Telem
 * `temp_ACCL`: float (Temperature for accelerometer)
 * `GYRO_x`, `GYRO_y`, `GYRO_z`: float (Raw gyroscope data)
 * `temp_GYRO`: float (Temperature for gyroscope)
-* `GRAV_x`, `GRAV_y`, `GRAV_z`: float (Gravity vector)
+* `GRAV_x`, `GRAV_y`, `GRAV_z`: float (Gravity vector, for G-Force)
 * `CORI_w`, `CORI_x`, `CORI_y`, `CORI_z`: float (Coriolis/quaternion rotation data)
 * `GPS (Lat.) [deg]`, `GPS (Long.) [deg]`: float (Coordinates)
 * `GPS (Alt.) [m]`: float (Altitude)
@@ -91,9 +91,6 @@ When extracting MP4 files, the generated CSV and the normalized in-memory `Telem
 * `GPS (days) [deg]`, `GPS (secs) [s]`: float (GoPro GPS timing)
 * `GPS (DOP) [deg]`, `GPS (fix) [deg]`: float (GPS accuracy and fix status)
 * `altitude system`: string (e.g., "MSLV")
-* **Calculated In-Memory Extensions (Not in CSV):**
-* `latG`: float (Calculated Lateral G-force)
-* `lonG`: float (Calculated Longitudinal G-force)
 
 
 
