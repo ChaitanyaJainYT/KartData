@@ -249,7 +249,52 @@ Reference selection       Playback cursor          Position marker
 
 ---
 
-## 10. Color Palette
+## 10. Sector System — How It Works
+
+### Default Sector Definition (No Map Lines)
+
+When no sector lines are drawn on the map, sectors are computed **automatically by distance**:
+
+1. After CSV is loaded and laps are split (either single lap or via gate), each lap's `maxDistance` is the total distance of that lap.
+2. The lap is divided into **3 equal-distance segments**:
+   - **Sector 1**: 0% → 33% of lap distance
+   - **Sector 2**: 33% → 66% of lap distance  
+   - **Sector 3**: 66% → 100% of lap distance
+3. The code finds the data row closest to each boundary (33%, 66%) by `lapDistance`.
+4. Times are computed as: `sectorTime = boundaryRow.time - startRow.time`.
+
+### Setting Custom Sector Lines on the Map
+
+Instead of equal-distance sectors, you can draw sector boundary lines on the map:
+
+1. Click **S1** button → map enters sector-drawing mode.
+2. Click **two points** on the track to draw a line across the track — this defines where Sector 1 ends and Sector 2 begins.
+3. Repeat for **S2** (Sector 2 → 3 boundary) and **S3** (Sector 3 → finish boundary), or any subset.
+4. Sector lines are displayed as dashed colored lines:
+   - S1: blue (`#3b82f6`)
+   - S2: orange (`#f97316`)
+   - S3: green (`#22c55e`)
+5. Click **Reset** icon to clear all sector lines and revert to equal-distance defaults.
+
+### Data Calculation
+
+- **Sector times**: In `computeSectors()`, the code finds the rows in the lap array closest to the boundary distances, then subtracts the timestamps.
+- **Best sectors**: `computeBestSectors()` iterates all laps and stores the lowest time for each sector in `bestSectors.s1`, `.s2`, `.s3`.
+- **Lap tower display**: Cells for the best sector times are highlighted in **purple** (`#a855f7`) with bold font weight.
+- **Map coloring**: Each lap's track is colored by sector performance vs best sector:
+  - Green: time equals the best sector time
+  - Red: time is >10% slower than best
+  - Gray: time is within 10% of best
+
+### Gate vs Sectors
+
+- **Gate (S/F)**: Splits the overall data into **laps** by detecting when the GPS track crosses the start/finish line.
+- **Sectors**: Subdivide each **lap** into 3 segments (either by distance or by drawn lines).
+- You must set a gate to get multiple laps. Sectors work within each lap regardless.
+
+---
+
+## 11. Color Palette
 
 | Token | Dark | Light | Usage |
 |-------|------|-------|-------|
@@ -260,7 +305,8 @@ Reference selection       Playback cursor          Position marker
 | text-primary | `#f8fafc` | `#0f172a` | Primary text |
 | text-secondary | `#94a3b8` | `#64748b` | Muted text |
 | accent | `#ef4444` | Brand, speed, active |
-| accent-green | `#22c55e` | Positive delta, S1 |
-| accent-purple | `#a855f7` | Reference lap, S3 |
-| accent-amber | `#f59e0b` | S2 |
+| accent-green | `#22c55e` | Positive delta, Sector 3 line |
+| accent-purple | `#a855f7` | Reference lap, best sector highlight |
+| accent-blue | `#3b82f6` | Sector 1 line |
+| accent-orange | `#f97316` | Sector 2 line |
 | lap colors | `#ef4444, #3b82f6, #22c55e, #f59e0b, #a855f7, #ec4899, #06b6d4, #f97316` | Lap traces |
