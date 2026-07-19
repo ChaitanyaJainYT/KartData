@@ -1,4 +1,4 @@
-<!DOCTYPE html>
+﻿<!DOCTYPE html>
 <html lang="en" class="dark">
 <head>
     <meta charset="UTF-8">
@@ -53,6 +53,45 @@
 
     <!-- Global Styles -->
     <link rel="stylesheet" href="styles/global.css">
+
+    <style>
+        @keyframes slide-in { from { opacity: 0; transform: translateX(100%); } to { opacity: 1; transform: translateX(0); } }
+        @-webkit-keyframes slide-in { from { opacity: 0; transform: translateX(100%); } to { opacity: 1; transform: translateX(0); } }
+        .animate-slide-in { animation: slide-in 0.3s ease-out; }
+        body.drag-over #drag-overlay { display: flex; }
+        #drag-overlay { transition: opacity 0.2s; }
+        :focus-visible { outline: 2px solid #ef4444; outline-offset: 2px; }
+        @media (prefers-reduced-motion: reduce) { *, *::before, *::after { animation-duration: 0.01ms !important; animation-iteration-count: 1 !important; transition-duration: 0.01ms !important; } }
+        #app-sidebar { transition: width 0.3s ease, padding 0.3s ease, overflow 0.3s ease; width: 320px; }
+        body.sidebar-collapsed #app-sidebar { width: 0; padding: 0; overflow: hidden; }
+        .leaflet-top.leaflet-center { position: absolute; left: 50%; transform: translateX(-50%); z-index: 1000; pointer-events: none; }
+        .leaflet-top.leaflet-center .leaflet-control { pointer-events: auto; }
+        .resize-handle { flex-shrink: 0; position: relative; z-index: 10; background: transparent; }
+        .resize-handle--vertical { width: 6px; cursor: col-resize; }
+        .resize-handle--vertical:hover { background: rgba(239, 68, 68, 0.08); }
+        .resize-handle--vertical .resize-handle__line { position: absolute; top: 0; bottom: 0; left: 2px; width: 2px; background: #2a3143; border-radius: 1px; transition: background 0.15s; }
+        .resize-handle--vertical:hover .resize-handle__line { background: #ef4444; }
+        .resize-handle--horizontal { height: 6px; cursor: row-resize; }
+        .resize-handle--horizontal .resize-handle__line { position: absolute; left: 0; right: 0; top: 2px; height: 2px; background: #2a3143; border-radius: 1px; }
+        .resize-handle--horizontal:hover .resize-handle__line { background: #ef4444; }
+        .resize-handle.is-dragging .resize-handle__line { background: #ef4444; }
+        .panel-hidden { flex: 0 0 0 !important; overflow: hidden; padding: 0 !important; margin: 0 !important; opacity: 0; pointer-events: none; }
+        .panel-toggle-icon.is-hidden { transform: rotate(180deg); }
+        @media (max-width: 767px) {
+            #app-sidebar { position: fixed; top: 0; left: -320px; height: 100vh; z-index: 5000; width: 85vw; max-width: 320px; transition: left 0.3s ease; }
+            body.sidebar-open #app-sidebar { left: 0; }
+            #sidebar-backdrop { display: none; position: fixed; inset: 0; background: rgba(0,0,0,0.5); z-index: 4999; }
+            body.sidebar-open #sidebar-backdrop { display: block; }
+            .desktop-only { display: none !important; }
+            #main-content-area { flex-direction: column !important; }
+            #map-panel { height: 50vh !important; min-height: 300px; }
+            #charts-column { height: 50vh !important; }
+            .preset-dropdown { display: none !important; }
+            .frame-step-btn { display: none !important; }
+            #main-scrubber { height: 24px; }
+            .mode-text-label { display: none; }
+        }
+    </style>
 </head>
 <body class="bg-gray-50 dark:bg-gray-950 h-screen flex flex-col overflow-hidden text-gray-800 dark:text-gray-200 transition-colors duration-200">
 
@@ -69,27 +108,42 @@
             <p class="hidden md:block text-xs font-medium text-gray-500 dark:text-gray-400 tracking-wide uppercase">Precision Telemetry Suite</p>
         </div>
 
-        <div class="flex items-center gap-4">
+        <div class="flex items-center gap-2">
             <!-- File info (hidden initially) -->
-            <div id="file-info" class="hidden items-center gap-3 mr-4 text-sm bg-gray-100 dark:bg-gray-800 px-3 py-1.5 rounded-full border border-gray-200 dark:border-gray-700">
+            <div id="file-info" class="hidden items-center gap-3 mr-2 text-sm bg-gray-100 dark:bg-gray-800 px-3 py-1.5 rounded-full border border-gray-200 dark:border-gray-700">
                 <i class="ph ph-file-csv text-gray-500 dark:text-gray-400"></i>
                 <span id="filename-display" class="font-semibold text-gray-700 dark:text-gray-200 max-w-[150px] truncate"></span>
                 <div class="w-1 h-1 rounded-full bg-gray-300 dark:bg-gray-600"></div>
                 <span id="lap-count-display" class="font-bold text-brand-600 dark:text-brand-500"></span>
+                <button id="download-csv-btn" class="hidden p-1 rounded text-gray-400 hover:text-gray-600 dark:hover:text-gray-300 transition-colors" title="Download Telemetry CSV" aria-label="Download telemetry CSV">
+                    <i class="ph ph-download-simple text-sm"></i>
+                </button>
             </div>
 
             <!-- Upload buttons -->
-            <label id="video-upload-label" class="cursor-pointer bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-600 hover:border-gray-400 dark:hover:border-gray-500 hover:shadow-sm text-gray-700 dark:text-gray-200 px-4 py-2 rounded-xl text-sm font-semibold transition-all flex items-center gap-2 active:scale-95">
+            <label id="video-upload-label" class="desktop-only cursor-pointer bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-600 hover:border-gray-400 dark:hover:border-gray-500 hover:shadow-sm text-gray-700 dark:text-gray-200 px-4 py-2 rounded-xl text-sm font-semibold transition-all flex items-center gap-2 active:scale-95">
                 <i id="video-upload-icon" class="ph ph-video-camera text-lg text-gray-500 dark:text-gray-400"></i>
                 <span id="video-btn-text">Add Video</span>
                 <input type="file" id="video-upload" accept="video/*" class="hidden" />
             </label>
 
-            <label class="cursor-pointer bg-brand-600 hover:bg-brand-500 text-white px-4 py-2 rounded-xl text-sm font-semibold transition-all shadow-sm shadow-brand-500/20 flex items-center gap-2 active:scale-95">
+            <label class="desktop-only cursor-pointer bg-brand-600 hover:bg-brand-500 text-white px-4 py-2 rounded-xl text-sm font-semibold transition-all shadow-sm shadow-brand-500/20 flex items-center gap-2 active:scale-95">
                 <i class="ph ph-upload-simple text-lg"></i>
                 Upload CSV
                 <input type="file" id="csv-upload" accept=".csv" class="hidden" />
             </label>
+
+            <button id="new-session-btn" class="p-2 rounded-xl text-gray-500 hover:bg-gray-100 dark:text-gray-400 dark:hover:bg-gray-800 transition-colors hidden" title="New Session" aria-label="Start new session">
+                <i class="ph ph-trash text-xl"></i>
+            </button>
+
+            <button id="sidebar-toggle-btn" class="p-2 rounded-xl text-gray-500 hover:bg-gray-100 dark:text-gray-400 dark:hover:bg-gray-800 transition-colors" title="Toggle Sidebar" aria-label="Toggle sidebar">
+                <i class="ph ph-sidebar text-lg"></i>
+            </button>
+
+            <button id="settings-gear" class="p-2 rounded-xl text-gray-500 hover:bg-gray-100 dark:text-gray-400 dark:hover:bg-gray-800 transition-colors" title="Open Settings" aria-label="Open settings">
+                <i class="ph ph-gear text-xl"></i>
+            </button>
 
             <button id="theme-toggle" class="p-2 rounded-xl text-gray-500 hover:bg-gray-100 dark:text-gray-400 dark:hover:bg-gray-800 transition-colors" title="Toggle Theme">
                 <i class="ph ph-moon text-xl dark:hidden"></i>
@@ -103,64 +157,97 @@
 
         <!-- Sidebar (hidden initially) -->
         <aside id="app-sidebar" class="w-80 flex flex-col border-r border-gray-200 dark:border-gray-800 bg-white dark:bg-gray-900 hidden flex-shrink-0 transition-colors z-10">
-            <div class="p-6 border-b border-gray-200 dark:border-gray-800">
-                <h3 class="text-[10px] font-bold text-gray-400 dark:text-gray-500 uppercase tracking-wider mb-4">Live Telemetry</h3>
-                <div class="flex flex-col gap-4">
-                    <div class="bg-gray-50 dark:bg-gray-950 p-4 rounded-2xl border border-gray-100 dark:border-gray-800 flex flex-col items-center justify-center relative overflow-hidden">
-                        <div class="absolute inset-0 bg-gradient-to-br from-gray-100/50 to-transparent dark:from-gray-800/20 dark:to-transparent"></div>
-                        <span class="text-xs font-semibold text-gray-500 dark:text-gray-400 z-10">SPEED</span>
-                        <div class="flex items-baseline gap-1 z-10">
-                            <span id="live-speed" class="text-4xl font-black text-gray-900 dark:text-white tracking-tighter font-mono">0.0</span>
-                            <span class="text-sm font-bold text-gray-400">km/h</span>
+            <!-- Live Telemetry -->
+            <div class="p-5 border-b border-gray-200 dark:border-gray-800">
+                <h3 class="text-[10px] font-bold text-gray-400 dark:text-gray-500 uppercase tracking-wider mb-3">Live Telemetry</h3>
+                <div class="flex flex-col gap-3">
+                    <div class="bg-gray-50 dark:bg-gray-950 p-3.5 rounded-xl border border-gray-100 dark:border-gray-800 flex flex-col items-center">
+                        <span class="text-[10px] font-semibold text-gray-500 dark:text-gray-400 tracking-wide">SPEED</span>
+                        <div class="flex items-baseline gap-1">
+                            <span id="live-speed" class="text-3xl font-black text-gray-900 dark:text-white tracking-tighter font-mono">0.0</span>
+                            <span class="text-xs font-bold text-gray-400">km/h</span>
                         </div>
                     </div>
-                    <div class="grid grid-cols-2 gap-3">
-                        <div class="bg-gray-50 dark:bg-gray-950 p-3 rounded-xl border border-gray-100 dark:border-gray-800 flex flex-col items-center">
-                            <span class="text-[10px] font-semibold text-gray-500 dark:text-gray-400 mb-1">TIME</span>
-                            <span id="live-time" class="text-lg font-bold text-gray-800 dark:text-gray-200 font-mono">00:00.000</span>
+                    <div class="grid grid-cols-2 gap-2.5">
+                        <div class="bg-gray-50 dark:bg-gray-950 p-2.5 rounded-xl border border-gray-100 dark:border-gray-800 flex flex-col items-center">
+                            <span class="text-[10px] font-semibold text-gray-500 dark:text-gray-400">TIME</span>
+                            <span id="live-time" class="text-base font-bold text-gray-800 dark:text-gray-200 font-mono">00:00.000</span>
                         </div>
-                        <div class="bg-gray-50 dark:bg-gray-950 p-3 rounded-xl border border-gray-100 dark:border-gray-800 flex flex-col items-center">
-                            <span class="text-[10px] font-semibold text-gray-500 dark:text-gray-400 mb-1">LAP</span>
-                            <span id="live-lap" class="text-lg font-bold text-brand-600 font-mono">-</span>
+                        <div class="bg-gray-50 dark:bg-gray-950 p-2.5 rounded-xl border border-gray-100 dark:border-gray-800 flex flex-col items-center">
+                            <span class="text-[10px] font-semibold text-gray-500 dark:text-gray-400">LAP</span>
+                            <span id="live-lap" class="text-base font-bold text-brand-600 font-mono">-</span>
                         </div>
                     </div>
                 </div>
             </div>
 
-            <!-- Gate config placeholder -->
-            <div class="p-4 border-b border-gray-200 dark:border-gray-800 bg-gray-50/50 dark:bg-gray-900/50">
+            <!-- Gate Configuration -->
+            <div class="p-4 border-b border-gray-200 dark:border-gray-800">
                 <h3 class="text-[10px] font-bold text-gray-400 dark:text-gray-500 uppercase tracking-wider mb-2">Gate Configuration</h3>
-                <div id="stepText" class="text-xs text-gray-600 dark:text-gray-300 mb-3 bg-blue-50 dark:bg-blue-900/20 text-blue-700 dark:text-blue-300 p-2.5 rounded-lg border border-blue-100 dark:border-blue-800/30 leading-tight">
+                <div id="stepText" class="text-xs text-gray-600 dark:text-gray-300 mb-3 bg-gray-50 dark:bg-gray-950 p-2.5 rounded-lg border border-gray-200 dark:border-gray-800 leading-relaxed">
                     Draw a gate line across the track on the map to automatically split and calculate laps.
                 </div>
                 <div class="flex gap-2">
-                    <button id="draw-gate-btn" disabled class="flex-1 bg-gray-900 hover:bg-black dark:bg-gray-700 dark:hover:bg-gray-600 disabled:opacity-50 text-white text-xs font-semibold py-2 px-3 rounded-lg flex items-center justify-center gap-1.5 transition-all active:scale-95 shadow-sm">
-                        <i class="ph ph-pen-nib text-base"></i> Set Gate
+                    <button id="draw-gate-btn" disabled class="flex-1 bg-gray-900 hover:bg-black dark:bg-gray-700 dark:hover:bg-gray-600 disabled:opacity-40 disabled:cursor-not-allowed text-white text-xs font-semibold py-2 px-3 rounded-lg flex items-center justify-center gap-1.5 transition-all shadow-sm">
+                        <i class="ph ph-pen-nib text-sm"></i> Set Gate
                     </button>
-                    <button id="clear-gate-btn" class="bg-white dark:bg-gray-800 hover:bg-gray-50 dark:hover:bg-gray-700 border border-gray-200 dark:border-gray-700 text-gray-700 dark:text-gray-300 text-xs font-semibold py-2 px-3 rounded-lg transition-all active:scale-95 shadow-sm">
+                    <button id="clear-gate-btn" class="bg-white dark:bg-gray-800 hover:bg-gray-50 dark:hover:bg-gray-700 border border-gray-200 dark:border-gray-700 text-gray-600 dark:text-gray-400 text-xs font-semibold py-2 px-3 rounded-lg transition-all shadow-sm">
                         Reset
                     </button>
                 </div>
             </div>
 
-            <!-- Lap list placeholder -->
+            <!-- Lap Visibility -->
             <div class="flex-1 flex flex-col overflow-hidden">
-                <div class="p-4 pb-2 flex flex-col gap-2">
+                <div class="p-4 pb-2 flex flex-col gap-2.5">
                     <div class="flex justify-between items-center">
                         <h3 class="text-[10px] font-bold text-gray-400 dark:text-gray-500 uppercase tracking-wider">Lap Visibility</h3>
-                        <label class="flex items-center gap-1.5 cursor-pointer bg-gray-100 dark:bg-gray-800 px-2 py-1 rounded">
+                        <label class="flex items-center gap-1.5 cursor-pointer bg-gray-100 dark:bg-gray-800 px-2 py-1 rounded transition-colors hover:bg-gray-200 dark:hover:bg-gray-700">
                             <span class="text-[10px] text-gray-500 dark:text-gray-400 uppercase font-bold">Sort by Time</span>
-                            <input type="checkbox" id="sort-laps-toggle" class="rounded text-brand-600 focus:ring-0 w-3 h-3 bg-gray-200 dark:bg-gray-700 border-transparent">
+                            <input type="checkbox" id="sort-laps-toggle" class="rounded text-brand-600 focus:ring-0 w-3 h-3 bg-gray-200 dark:bg-gray-700 border-gray-300 dark:border-gray-600">
                         </label>
                     </div>
-                    <div class="flex items-center justify-end gap-2 group relative">
-                        <i class="ph ph-chart-line-up text-gray-400 text-sm" title="Data Smoothing"></i>
-                        <input type="range" id="smoothing-slider" min="0" max="20" value="0" step="1" class="w-20">
-                        <span id="smoothing-value" class="text-xs font-mono text-gray-500">0</span>
+                    <div class="flex items-center justify-between text-xs text-gray-500 dark:text-gray-400">
+                        <span class="flex items-center gap-1.5"><i class="ph ph-chart-line-up"></i> Smoothing</span>
+                        <div class="flex items-center gap-2">
+                            <input type="range" id="smoothing-slider" min="0" max="20" value="0" step="1" class="w-16">
+                            <span id="smoothing-value" class="font-mono font-bold w-4 text-right">0</span>
+                        </div>
                     </div>
                 </div>
-                <div id="sidebar-lap-list" class="flex-1 overflow-y-auto p-4 pt-0 space-y-1 custom-scrollbar">
+                <div id="sidebar-lap-list" class="flex-1 overflow-y-auto px-4 pb-4 space-y-0.5 custom-scrollbar">
                     <!-- Populated via JS -->
+                </div>
+
+                <!-- Statistics Panel -->
+                <div id="statistics-panel" class="border-t border-gray-200 dark:border-gray-800 pt-2 px-4 pb-2">
+                    <button id="stats-toggle" class="flex items-center justify-between w-full py-1.5 text-xs font-bold uppercase tracking-wider text-gray-400 dark:text-gray-500 hover:text-gray-600 dark:hover:text-gray-300 transition-colors">
+                        <span>Lap Statistics</span>
+                        <i class="ph ph-caret-down text-sm transition-transform duration-200" id="stats-chevron"></i>
+                    </button>
+                    <div id="stats-content" class="overflow-x-auto hidden max-h-48 overflow-y-auto">
+                        <table class="w-full text-xs font-mono">
+                            <thead>
+                                <tr class="text-gray-400 dark:text-gray-500 border-b border-gray-200 dark:border-gray-800">
+                                    <th class="stats-header px-1 py-1 text-left cursor-pointer hover:text-gray-600 dark:hover:text-gray-300" data-sort="lap">Lap</th>
+                                    <th class="stats-header px-1 py-1 text-right cursor-pointer hover:text-gray-600 dark:hover:text-gray-300" data-sort="time">Time</th>
+                                    <th class="stats-header px-1 py-1 text-right cursor-pointer hover:text-gray-600 dark:hover:text-gray-300" data-sort="avgSpeed">Avg</th>
+                                    <th class="stats-header px-1 py-1 text-right cursor-pointer hover:text-gray-600 dark:hover:text-gray-300" data-sort="maxSpeed">Max</th>
+                                    <th class="stats-header px-1 py-1 text-right cursor-pointer hover:text-gray-600 dark:hover:text-gray-300" data-sort="delta">Delta</th>
+                                </tr>
+                            </thead>
+                            <tbody id="stats-body"></tbody>
+                        </table>
+                    </div>
+                </div>
+
+                <!-- Bookmarks Section -->
+                <div id="bookmarks-section" class="border-t border-gray-200 dark:border-gray-800 pt-2 px-4 pb-2">
+                    <button id="bookmarks-toggle" class="flex items-center justify-between w-full py-1.5 text-xs font-bold uppercase tracking-wider text-gray-400 dark:text-gray-500 hover:text-gray-600 dark:hover:text-gray-300 transition-colors">
+                        <span>Bookmarks</span>
+                        <i class="ph ph-caret-down text-sm transition-transform duration-200" id="bookmarks-chevron"></i>
+                    </button>
+                    <div id="bookmarks-content" class="hidden max-h-32 overflow-y-auto"></div>
                 </div>
             </div>
         </aside>
@@ -186,14 +273,44 @@
             <div id="dashboard-content" class="flex-1 flex flex-col overflow-hidden hidden">
                 <div class="flex-1 flex flex-col lg:flex-row overflow-hidden">
                     <!-- Map column -->
-                    <div class="w-full lg:w-1/2 flex flex-col border-r border-gray-200 dark:border-gray-800 relative bg-gray-200 dark:bg-gray-900">
+                    <div id="map-panel" class="w-full lg:w-1/2 flex flex-col border-r border-gray-200 dark:border-gray-800 relative bg-gray-200 dark:bg-gray-900">
                         <div id="map" class="flex-1"></div>
                         <div class="absolute top-4 left-4 z-[1000] bg-white/90 dark:bg-gray-900/90 backdrop-blur px-3 py-1.5 rounded-lg border border-gray-200 dark:border-gray-700 shadow-sm pointer-events-none">
                             <span class="text-xs font-bold text-gray-500 dark:text-gray-400 uppercase tracking-wide">GPS Track</span>
                         </div>
                     </div>
+                    <!-- Data Table View (hidden) -->
+                    <div id="data-table-view" class="hidden flex-col h-full bg-white dark:bg-gray-900 border-l border-gray-200 dark:border-gray-800 overflow-hidden">
+                        <div class="flex items-center justify-between px-3 py-2 border-b border-gray-200 dark:border-gray-800 flex-shrink-0">
+                            <div class="flex items-center gap-2">
+                                <i class="ph ph-table text-sm text-gray-400"></i>
+                                <span class="text-xs font-bold uppercase tracking-wider text-gray-500 dark:text-gray-400">Data Table</span>
+                            </div>
+                            <div class="flex items-center gap-2">
+                                <input type="text" id="data-table-search" placeholder="Filter..." class="w-32 px-2 py-1 text-xs bg-gray-100 dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded font-mono text-gray-700 dark:text-gray-300 placeholder-gray-400 outline-none focus:border-brand-400">
+                                <button id="data-table-export" class="px-2 py-1 text-xs font-semibold text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-200 hover:bg-gray-100 dark:hover:bg-gray-800 rounded transition-colors" title="Export visible rows as CSV"><i class="ph ph-download-simple text-sm"></i></button>
+                                <button id="data-table-close" class="text-gray-400 hover:text-gray-600 dark:hover:text-gray-200 p-0.5" aria-label="Close data table"><i class="ph ph-x text-sm"></i></button>
+                            </div>
+                        </div>
+                        <div class="flex-1 overflow-auto" id="data-table-scroll">
+                            <table id="data-table" class="w-full text-[11px] font-mono border-collapse">
+                                <thead class="sticky top-0 z-10">
+                                    <tr class="bg-gray-50 dark:bg-gray-800 text-gray-500 dark:text-gray-400 border-b border-gray-200 dark:border-gray-700">
+                                        <th class="data-th px-2 py-1 text-left cursor-pointer hover:text-gray-700 dark:hover:text-gray-200 whitespace-nowrap" data-col="index">#</th>
+                                        <th class="data-th px-2 py-1 text-left cursor-pointer hover:text-gray-700 dark:hover:text-gray-200 whitespace-nowrap" data-col="lat">Lat</th>
+                                        <th class="data-th px-2 py-1 text-left cursor-pointer hover:text-gray-700 dark:hover:text-gray-200 whitespace-nowrap" data-col="lon">Lon</th>
+                                        <th class="data-th px-2 py-1 text-right cursor-pointer hover:text-gray-700 dark:hover:text-gray-200 whitespace-nowrap" data-col="speed">Speed</th>
+                                        <th class="data-th px-2 py-1 text-right cursor-pointer hover:text-gray-700 dark:hover:text-gray-200 whitespace-nowrap" data-col="time">Time</th>
+                                        <th class="data-th px-2 py-1 text-right cursor-pointer hover:text-gray-700 dark:hover:text-gray-200 whitespace-nowrap" data-col="lap">Lap</th>
+                                        <th class="data-th px-2 py-1 text-right cursor-pointer hover:text-gray-700 dark:hover:text-gray-200 whitespace-nowrap" data-col="lapDistance">Lap Dist</th>
+                                    </tr>
+                                </thead>
+                                <tbody id="data-table-body"></tbody>
+                            </table>
+                        </div>
+                    </div>
                     <!-- Charts column -->
-                    <div class="w-full lg:w-1/2 flex flex-col bg-white dark:bg-gray-900 overflow-y-auto">
+                    <div class="w-full lg:w-1/2 flex flex-col bg-white dark:bg-gray-900 overflow-y-auto" id="charts-column">
                         <div class="flex-1 p-4 flex flex-col gap-4">
                             <div class="flex-1 min-h-[250px] bg-white dark:bg-gray-900 rounded-xl border border-gray-200 dark:border-gray-800 shadow-sm p-2 flex flex-col">
                                 <div id="chart-speed-dist" class="flex-1 w-full"></div>
@@ -201,21 +318,36 @@
                             <div class="flex-1 min-h-[250px] bg-white dark:bg-gray-900 rounded-xl border border-gray-200 dark:border-gray-800 shadow-sm p-2 flex flex-col">
                                 <div id="chart-speed-time" class="flex-1 w-full"></div>
                             </div>
+                            <!-- Extended Charts Container -->
+                            <div class="p-4 pt-0 space-y-4" id="extended-charts-container"></div>
+                            <!-- Add Chart Button -->
+                            <div class="relative px-4 pb-4" id="add-chart-container">
+                                <button id="add-chart-btn" class="flex items-center gap-2 px-4 py-2.5 rounded-xl border-2 border-dashed border-gray-300 dark:border-gray-600 text-gray-500 dark:text-gray-400 hover:border-brand-500 hover:text-brand-600 dark:hover:text-brand-400 hover:bg-brand-50 dark:hover:bg-brand-900/10 transition-all text-sm font-semibold w-full justify-center">
+                                    <i class="ph ph-plus-circle text-lg"></i>
+                                    Add Chart
+                                    <i class="ph ph-caret-down text-sm ml-1"></i>
+                                </button>
+                                <div id="add-chart-menu" class="hidden absolute bottom-full left-0 right-0 mb-2 bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 shadow-xl z-20 overflow-hidden"></div>
+                            </div>
                         </div>
                     </div>
                 </div>
                 <!-- Video section (hidden initially) -->
-                <div id="video-section" class="bg-gray-900 dark:bg-gray-950 border-t border-gray-800 dark:border-gray-800 flex-shrink-0 hidden flex flex-col transition-all duration-200">
-                    <div class="bg-gray-800 dark:bg-gray-900 px-4 py-2 flex justify-between items-center border-b border-gray-700 dark:border-gray-800">
+                <div id="video-section" class="bg-gray-900 dark:bg-gray-950 border-t border-gray-800 flex-shrink-0 hidden flex-col overflow-hidden" style="max-height:0;transition:max-height 0.3s ease-in-out">
+                    <div class="bg-gray-800/80 dark:bg-gray-900/80 px-4 py-2 flex justify-between items-center border-b border-gray-700/50 dark:border-gray-800/50">
                         <h3 class="text-gray-300 text-xs font-bold flex items-center gap-2 uppercase tracking-wider">
-                            <i class="ph-fill ph-film-strip text-brand-500"></i> Video Synchronization
+                            <i class="ph-fill ph-film-strip text-brand-500"></i> Video
                         </h3>
-                        <div class="flex items-center gap-3 bg-gray-900/50 dark:bg-black/20 px-3 py-1 rounded-lg">
-                            <i class="ph ph-monitor text-gray-500 text-sm"></i>
-                            <input type="range" id="video-size-slider" min="200" max="800" value="350" class="w-24">
+                        <div class="flex items-center gap-3 text-gray-400">
+                            <label class="flex items-center gap-1.5 cursor-pointer text-gray-400 hover:text-gray-300 transition-colors">
+                                <input type="checkbox" id="extract-telemetry-toggle" class="rounded text-brand-600 focus:ring-0 w-3 h-3" checked>
+                                <span class="text-[10px] font-semibold">Extract</span>
+                            </label>
+                            <i class="ph ph-monitor text-sm"></i>
+                            <input type="range" id="video-size-slider" min="200" max="800" value="350" class="w-20">
                         </div>
                     </div>
-                    <div class="flex-1 p-3 overflow-x-auto overflow-y-hidden flex gap-3 items-center justify-start custom-scrollbar" id="video-grid">
+                    <div class="flex-1 overflow-x-auto overflow-y-hidden flex gap-2.5 p-3 items-center justify-start custom-scrollbar" id="video-grid">
                         <!-- Populated via JS -->
                     </div>
                 </div>
@@ -224,36 +356,38 @@
     </div>
 
     <!-- ==================== PLAYBACK BAR (hidden initially) ==================== -->
-    <footer id="playback-bar" class="bg-white/95 dark:bg-gray-900/95 backdrop-blur-md border-t border-gray-200 dark:border-gray-800 px-6 py-4 flex items-center gap-6 shadow-[0_-10px_30px_rgba(0,0,0,0.05)] dark:shadow-[0_-10px_30px_rgba(0,0,0,0.2)] z-30 hidden transition-colors flex-shrink-0">
+    <footer id="playback-bar" class="bg-white/95 dark:bg-gray-900/95 backdrop-blur-md border-t border-gray-200 dark:border-gray-800 px-6 py-4 flex items-center gap-4 shadow-[0_-10px_30px_rgba(0,0,0,0.05)] dark:shadow-[0_-10px_30px_rgba(0,0,0,0.2)] z-30 hidden transition-colors flex-shrink-0">
 
-        <div class="flex items-center gap-3">
-            <button id="prev-frame-btn" class="p-2 text-gray-500 dark:text-gray-400 hover:text-brand-600 dark:hover:text-brand-500 hover:bg-gray-100 dark:hover:bg-gray-800 rounded-full transition-all" title="Previous Frame (-0.04s)">
+        <div class="flex items-center gap-2">
+            <button id="prev-frame-btn" class="frame-step-btn p-2 text-gray-500 dark:text-gray-400 hover:text-brand-600 dark:hover:text-brand-500 hover:bg-gray-100 dark:hover:bg-gray-800 rounded-full transition-all" title="Step backward 0.04s" aria-label="Step backward 0.04s">
                 <i class="ph-fill ph-skip-back text-xl"></i>
             </button>
-            <button id="play-btn" class="w-12 h-12 flex items-center justify-center rounded-full bg-brand-600 text-white hover:bg-brand-500 hover:shadow-lg hover:shadow-brand-500/30 transition-all shadow-md active:scale-95 flex-shrink-0">
+            <button id="play-btn" class="w-12 h-12 flex items-center justify-center rounded-full bg-brand-600 text-white hover:bg-brand-500 hover:shadow-lg hover:shadow-brand-500/30 transition-all shadow-md active:scale-95 flex-shrink-0" aria-label="Play">
                 <i class="ph-fill ph-play text-2xl ml-1"></i>
             </button>
-            <button id="next-frame-btn" class="p-2 text-gray-500 dark:text-gray-400 hover:text-brand-600 dark:hover:text-brand-500 hover:bg-gray-100 dark:hover:bg-gray-800 rounded-full transition-all" title="Next Frame (+0.04s)">
+            <button id="next-frame-btn" class="frame-step-btn p-2 text-gray-500 dark:text-gray-400 hover:text-brand-600 dark:hover:text-brand-500 hover:bg-gray-100 dark:hover:bg-gray-800 rounded-full transition-all" title="Step forward 0.04s" aria-label="Step forward 0.04s">
                 <i class="ph-fill ph-skip-forward text-xl"></i>
             </button>
         </div>
 
-        <div class="h-10 w-px bg-gray-200 dark:bg-gray-800 mx-2"></div>
+        <div class="h-10 w-px bg-gray-200 dark:bg-gray-800"></div>
 
-        <div class="flex-1 flex flex-col justify-center gap-2">
+        <div class="flex-1 flex flex-col justify-center gap-2 relative">
             <div class="flex justify-between text-xs font-bold text-gray-500 dark:text-gray-400 font-mono tracking-wide">
                 <span id="scrubber-current" class="text-gray-900 dark:text-white bg-gray-100 dark:bg-gray-800 px-2 py-0.5 rounded">0.00</span>
                 <span id="scrubber-total">0.00</span>
             </div>
-            <input type="range" id="main-scrubber" min="0" max="100" value="0" step="0.01" class="w-full">
+            <div class="relative">
+                <input type="range" id="main-scrubber" min="0" max="100" value="0" step="0.01" class="w-full">
+            </div>
         </div>
 
-        <div class="h-10 w-px bg-gray-200 dark:bg-gray-800 mx-2"></div>
+        <div class="h-10 w-px bg-gray-200 dark:bg-gray-800"></div>
 
-        <div class="flex items-center gap-4">
+        <div class="flex items-center gap-2">
             <div class="flex bg-gray-100 dark:bg-gray-800 rounded-lg p-1 flex-shrink-0 border border-gray-200 dark:border-gray-700">
-                <button id="mode-dist" class="px-4 py-1.5 text-xs font-bold rounded-md text-gray-500 dark:text-gray-400 hover:text-gray-800 dark:hover:text-gray-200 transition-all">Distance</button>
-                <button id="mode-time" class="px-4 py-1.5 text-xs font-bold rounded-md bg-white dark:bg-gray-700 text-brand-600 dark:text-brand-400 shadow-sm transition-all">Time</button>
+                <button id="mode-dist" class="px-3 py-1.5 text-xs font-bold rounded-md text-gray-500 dark:text-gray-400 hover:text-gray-800 dark:hover:text-gray-200 transition-all" title="Distance mode" aria-label="Distance mode"><span class="mode-text-label">Distance</span><span class="hidden mode-icon-label"><i class="ph ph-ruler text-sm"></i></span></button>
+                <button id="mode-time" class="px-3 py-1.5 text-xs font-bold rounded-md bg-white dark:bg-gray-700 text-brand-600 dark:text-brand-400 shadow-sm transition-all" title="Time mode" aria-label="Time mode"><span class="mode-text-label">Time</span><span class="hidden mode-icon-label"><i class="ph ph-clock text-sm"></i></span></button>
             </div>
             <div class="flex items-center bg-gray-100 dark:bg-gray-800 rounded-lg border border-gray-200 dark:border-gray-700 overflow-hidden">
                 <div class="px-2 py-1.5 text-gray-400 dark:text-gray-500 bg-gray-200/50 dark:bg-gray-700/50 flex items-center border-r border-gray-200 dark:border-gray-700">
@@ -269,12 +403,128 @@
                 </select>
             </div>
         </div>
+
+        <div class="h-10 w-px bg-gray-200 dark:bg-gray-800"></div>
+
+        <div class="flex items-center gap-1">
+            <button id="ab-loop-a-btn" class="px-2 py-1 text-xs font-bold font-mono text-gray-400 dark:text-gray-500 hover:text-white hover:bg-gray-700 rounded transition-colors" aria-label="Set Marker A">[A]</button>
+            <button id="ab-loop-b-btn" class="px-2 py-1 text-xs font-bold font-mono text-gray-400 dark:text-gray-500 hover:text-white hover:bg-gray-700 rounded transition-colors" aria-label="Set Marker B">[B]</button>
+            <button id="ab-loop-toggle" class="px-2 py-1 text-xs font-bold font-mono rounded transition-colors text-gray-400 dark:text-gray-500 hover:text-white hover:bg-gray-700" aria-label="Toggle A-B Loop">Loop</button>
+            <button id="add-bookmark-btn" class="px-2 py-1 text-xs font-bold text-gray-400 dark:text-gray-500 hover:text-amber-400 hover:bg-gray-700 rounded transition-colors flex items-center gap-1" title="Add Bookmark (B)" aria-label="Add bookmark"><i class="ph ph-bookmark text-sm"></i></button>
+        </div>
+
+        <div class="h-10 w-px bg-gray-200 dark:bg-gray-800"></div>
+
+        <div class="flex items-center gap-2">
+            <button id="toggle-data-table" class="px-2 py-1.5 text-xs font-semibold rounded-lg transition-colors text-gray-500 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-800" aria-label="Toggle data table">
+                <i class="ph ph-table text-sm"></i>
+            </button>
+            <select id="layout-presets" class="preset-dropdown bg-transparent border border-gray-200 dark:border-gray-700 text-xs font-semibold text-gray-500 dark:text-gray-400 rounded-lg px-2 py-1 outline-none cursor-pointer">
+                <option value="Full Analysis">Layout: Full</option>
+                <option value="Map Focus">Map Focus</option>
+                <option value="Data Dive">Data Dive</option>
+                <option value="Video Review">Video Review</option>
+                <option value="Minimal">Minimal</option>
+            </select>
+            <button id="export-report-btn" class="px-2 py-1.5 text-xs font-semibold rounded-lg transition-colors text-gray-500 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-800" title="Export Session Report" aria-label="Export session report">
+                <i class="ph ph-file-text text-sm"></i>
+            </button>
+        </div>
     </footer>
 
-    <!-- Main scripts -->
-    <script type="module" src="app.js"></script>
+    <!-- Toast Container -->
+    <div id="toast-container" class="fixed bottom-6 right-6 z-50 flex flex-col-reverse gap-2 pointer-events-none"></div>
 
-    <!-- Phase 1-2: Core CSV + Map + Charts (inline for rapid development) -->
+    <!-- Drag-Over Overlay -->
+    <div id="drag-overlay" class="fixed inset-0 z-40 bg-gray-950/70 backdrop-blur-sm hidden items-center justify-center">
+        <div class="bg-white dark:bg-gray-800 rounded-2xl border-2 border-dashed border-brand-500 p-12 text-center shadow-2xl">
+            <i class="ph-fill ph-upload-simple text-5xl text-brand-500 mb-4"></i>
+            <h3 class="text-xl font-bold text-gray-900 dark:text-white mb-2">Drop CSV or video here</h3>
+            <p class="text-sm text-gray-500 dark:text-gray-400">Supports .csv telemetry files and video files</p>
+        </div>
+    </div>
+
+    <!-- Sidebar Backdrop (mobile) -->
+    <div id="sidebar-backdrop" class="hidden" onclick="toggleSidebar()"></div>
+
+    <!-- Context Menu -->
+    <div id="context-menu" class="hidden fixed z-[2000] bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 shadow-xl py-1 min-w-[180px] overflow-hidden"></div>
+
+    <!-- Settings Overlay -->
+    <div id="settings-overlay" class="fixed inset-0 z-[3000] bg-black/50 backdrop-blur-sm hidden transition-opacity duration-300" aria-hidden="true">
+        <div id="settings-drawer" class="fixed top-0 right-0 h-full w-80 max-w-[90vw] bg-white dark:bg-gray-900 shadow-2xl transform translate-x-0 transition-transform duration-300 overflow-y-auto" role="dialog" aria-label="Settings">
+            <div class="flex items-center justify-between p-4 border-b border-gray-200 dark:border-gray-800">
+                <h2 class="text-sm font-bold uppercase tracking-wider text-gray-700 dark:text-gray-300">Settings</h2>
+                <button id="settings-close" class="text-gray-400 hover:text-gray-600 dark:hover:text-gray-200 p-1" aria-label="Close settings">
+                    <i class="ph ph-x text-lg"></i>
+                </button>
+            </div>
+            <div class="p-4 space-y-5">
+                <div class="space-y-1">
+                    <label class="text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wider">Default Playback Speed</label>
+                    <select id="setting-speed" class="w-full bg-gray-100 dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg px-3 py-2 text-sm text-gray-700 dark:text-gray-300">
+                        <option value="0.25">0.25x</option>
+                        <option value="0.5">0.5x</option>
+                        <option value="1" selected>1.0x</option>
+                        <option value="2">2.0x</option>
+                        <option value="4">4.0x</option>
+                        <option value="8">8.0x</option>
+                    </select>
+                </div>
+                <div class="space-y-1">
+                    <label class="text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wider">Default Mode</label>
+                    <div class="flex gap-2">
+                        <label class="flex items-center gap-2 cursor-pointer">
+                            <input type="radio" name="setting-mode" value="distance" class="text-brand-400 focus:ring-brand-400">
+                            <span class="text-sm text-gray-700 dark:text-gray-300">Distance</span>
+                        </label>
+                        <label class="flex items-center gap-2 cursor-pointer">
+                            <input type="radio" name="setting-mode" value="time" checked class="text-brand-400 focus:ring-brand-400">
+                            <span class="text-sm text-gray-700 dark:text-gray-300">Time</span>
+                        </label>
+                    </div>
+                </div>
+                <div class="space-y-1">
+                    <label class="text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wider">Default Smoothing</label>
+                    <div class="flex items-center gap-3">
+                        <input type="range" id="setting-smoothing" min="0" max="20" value="0" step="1" class="flex-1">
+                        <span id="setting-smoothing-value" class="text-sm font-mono text-gray-600 dark:text-gray-400 w-6 text-right">0</span>
+                    </div>
+                </div>
+                <div class="space-y-1">
+                    <label class="text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wider">Map Tiles</label>
+                    <select id="setting-map-tiles" class="w-full bg-gray-100 dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg px-3 py-2 text-sm text-gray-700 dark:text-gray-300">
+                        <option value="dark">Dark (CartoDB)</option>
+                        <option value="light">Light (OSM)</option>
+                        <option value="satellite">Satellite</option>
+                    </select>
+                </div>
+                <div class="space-y-1">
+                    <label class="text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wider">Chart Line Thickness</label>
+                    <div class="flex items-center gap-3">
+                        <input type="range" id="setting-line-thickness" min="1" max="5" value="2.5" step="0.5" class="flex-1">
+                        <span id="setting-line-thickness-value" class="text-sm font-mono text-gray-600 dark:text-gray-400 w-6 text-right">2.5</span>
+                    </div>
+                </div>
+                <div class="flex items-center justify-between">
+                    <label class="text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wider">Video HUD Always On</label>
+                    <label class="relative inline-flex items-center cursor-pointer">
+                        <input type="checkbox" id="setting-hud-always-on" class="sr-only peer">
+                        <div class="w-9 h-5 bg-gray-200 dark:bg-gray-700 peer-focus:outline-none peer-focus:ring-2 peer-focus:ring-brand-400 rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:bg-brand-400"></div>
+                    </label>
+                </div>
+                <div class="flex items-center justify-between">
+                    <label class="text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wider">Auto-Loop</label>
+                    <label class="relative inline-flex items-center cursor-pointer">
+                        <input type="checkbox" id="setting-auto-loop" checked class="sr-only peer">
+                        <div class="w-9 h-5 bg-gray-200 dark:bg-gray-700 peer-focus:outline-none peer-focus:ring-2 peer-focus:ring-brand-400 rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:bg-brand-400"></div>
+                    </label>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Main scripts (all inline) -->
     <script>
         // ============ State ============
         let rawData = [];
@@ -289,16 +539,49 @@
         let isRelayouting = false;
         let currentPositionMarker = null;
         let sortLapsByTime = false;
-        let playbackState = { isPlaying: false, mode: 'time', currentValue: 0, maxValue: 0, animFrameId: null, lastFrameTime: 0, baseSpeed: 1.0, distanceSimSpeed: 25.0 };
+        let playbackState = { isPlaying: false, mode: 'time', currentValue: 0, maxValue: 0, animFrameId: null, lastFrameTime: 0, baseSpeed: 1.0, distanceSimSpeed: 25.0, markerA: null, markerB: null, loopMode: 'full' };
         let videoBlobUrl = null;
         let videoElements = [];
         let currentVideoSize = 350;
+        let _renderedLapCount = 0;
         let isUploadingVideo = false;
         let gatePoints = [];
         let gateLayer = null;
         let ghostLayer = null;
         let isDrawingGate = false;
         let lapMarkers = {};
+        let toastIdCounter = 0;
+        let visibleToasts = [];
+        let undoState = null;
+        let gateUndoState = null;
+        let speedHeatmapActive = false;
+        let contextMenuTarget = null;
+        let referenceLapId = -1;
+        let bestSectors = { s1: Infinity, s2: Infinity, s3: Infinity };
+        let statsSortKey = 'lap';
+        let statsSortAsc = true;
+        let bookmarks = [];
+        let bookmarkMapMarkers = {};
+        let abMarkers = {};
+        let bookmarkMarkerLayer = null;
+        let extractMetadataEnabled = true;
+        let telemetryCsvText = '';
+        let telemetrySource = null;
+        let telemetryDownloadName = 'telemetry.csv';
+        let visibleChartTypes = new Set();
+        let dataTableSortKey = 'index';
+        let dataTableSortAsc = true;
+        let dataTableFilter = '';
+        let userSettings = {};
+        const SETTINGS_KEY = 'kartdata-settings';
+        const defaultSettings = { playbackSpeed: 1.0, mode: 'time', smoothing: 0, mapTiles: 'dark', lineThickness: 2.5, hudAlwaysOn: false, autoLoop: true };
+        const BOOKMARK_MAX = 50;
+        const CHART_TYPES = [
+            { id: 'altitude', name: 'Altitude vs Distance', icon: 'ph-trend-up' },
+            { id: 'lateral-g', name: 'Lateral G vs Distance', icon: 'ph-arrows-left-right' },
+            { id: 'longitudinal-g', name: 'Longitudinal G vs Distance', icon: 'ph-arrows-out-line-horizontal' },
+            { id: 'gg-diagram', name: 'G-G Diagram', icon: 'ph-target' }
+        ];
         const COLORS = [
             '#3b82f6', '#ef4444', '#22c55e', '#f59e0b', '#a855f7',
             '#06b6d4', '#ec4899', '#84cc16', '#f97316', '#6366f1',
@@ -332,30 +615,282 @@
 
         function smoothData(data, windowSize) {
             if (windowSize <= 0) return data.slice();
-            const result = [];
-            for (let i = 0; i < data.length; i++) {
-                const start = Math.max(0, i - windowSize);
-                const end = Math.min(data.length - 1, i + windowSize);
-                let sum = 0, count = 0;
-                for (let j = start; j <= end; j++) {
-                    sum += data[j];
-                    count++;
-                }
-                result.push(sum / count);
-            }
-            return result;
+            return data.map((_, i) => { let s = Math.max(0, i - windowSize), e = Math.min(data.length - 1, i + windowSize), sum = 0, c = 0; for (let j = s; j <= e; j++) { sum += data[j]; c++ } return sum / c });
+        }
+        function binarySearch(arr, target, key) {
+            if (!arr || !arr.length) return null;
+            let lo = 0, hi = arr.length - 1;
+            while (lo < hi) { const m = (lo + hi) >> 1; if (arr[m][key] < target) lo = m + 1; else hi = m }
+            return arr[lo] || arr[arr.length - 1];
         }
 
-        // ============ Video ============
+        // ============ Toast System ============
+        function showToast(type, message, options) {
+            options = options || {};
+            const id = ++toastIdCounter;
+            const tc = { success: { color: '#22c55e', icon: 'check-circle', dd: 4000 }, error: { color: '#ef4444', icon: 'x-circle', dd: 8000 }, warning: { color: '#eab308', icon: 'warning', dd: 8000 }, info: { color: '#3b82f6', icon: 'info', dd: 4000 } };
+            const c = tc[type] || tc.info;
+            const dur = options.duration || c.dd;
+            while (visibleToasts.length >= 3) { const o = visibleToasts.shift(); dismissToast(o.id) }
+            const container = document.getElementById('toast-container');
+            if (!container) return id;
+            const el = document.createElement('div');
+            el.className = 'toast toast-' + type + ' pointer-events-auto flex items-start gap-3 px-4 py-3 rounded-xl bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 shadow-lg mb-0 max-w-sm animate-slide-in';
+            el.style.borderLeft = '4px solid ' + c.color;
+            el.setAttribute('role', 'alert');
+            el.dataset.toastId = id;
+            const undoHtml = options.undoAction ? '<button class="toast-undo mt-1.5 text-xs font-bold text-brand-600 hover:text-brand-500 transition-colors" data-action="undo">[Undo]</button>' : '';
+            const progressHtml = options.progress !== undefined ? '<div class="toast-progress mt-1.5 h-1 bg-gray-200 dark:bg-gray-700 rounded-full overflow-hidden"><div class="h-full bg-brand-500 rounded-full transition-all duration-200" style="width:' + options.progress + '%"></div></div>' : '';
+            el.innerHTML = '<i class="ph-fill ph-' + c.icon + ' text-lg flex-shrink-0 mt-0.5" style="color:' + c.color + '"></i><div class="flex-1 min-w-0"><p class="text-sm font-medium text-gray-800 dark:text-gray-200 break-words">' + message + '</p>' + undoHtml + progressHtml + '</div><button class="toast-dismiss flex-shrink-0 ml-2 text-gray-400 hover:text-gray-600 dark:hover:text-gray-300 transition-colors text-lg leading-none" aria-label="Dismiss">&times;</button>';
+            container.appendChild(el);
+            el.querySelector('.toast-dismiss').addEventListener('click', function() { dismissToast(id) });
+            if (options.undoAction) el.querySelector('.toast-undo').addEventListener('click', function() { options.undoAction(); dismissToast(id) });
+            var dt = setTimeout(function() { dismissToast(id) }, dur);
+            el.addEventListener('mouseenter', function() { clearTimeout(dt) });
+            el.addEventListener('mouseleave', function() { dt = setTimeout(function() { dismissToast(id) }, dur) });
+            visibleToasts.push({ id: id, type: type, message: message, el: el, dismissTimer: dt });
+            return id;
+        }
+        function dismissToast(id) {
+            var idx = -1;
+            for (var i = 0; i < visibleToasts.length; i++) { if (visibleToasts[i].id === id) { idx = i; break } }
+            if (idx === -1) return;
+            var r = visibleToasts[idx];
+            clearTimeout(r.dismissTimer);
+            r.el.style.opacity = '0';
+            r.el.style.transform = 'translateX(100%)';
+            setTimeout(function() { r.el.remove(); visibleToasts.splice(idx, 1) }, 300);
+        }
+        function updateToastProgress(id, percent) {
+            for (var i = 0; i < visibleToasts.length; i++) { if (visibleToasts[i].id === id) { var bar = visibleToasts[i].el.querySelector('.toast-progress div'); if (bar) bar.style.width = percent + '%'; break } }
+        }
+
+        // ============ Drag-Drop Upload ============
+        function handleFileDrop(file) {
+            var name = file.name.toLowerCase();
+            var isCsv = name.endsWith('.csv');
+            var isVideo = file.type.startsWith('video/');
+            if (!isCsv && !isVideo) { showToast('warning', 'Unsupported file type. Please upload a CSV or video file.'); return }
+            if (isCsv) {
+                if (file.size > 50 * 1024 * 1024) showToast('warning', 'File is very large (>50MB). Processing may be slow.');
+                var inp = document.getElementById('csv-upload');
+                var dt = new DataTransfer(); dt.items.add(file); inp.files = dt.files; inp.dispatchEvent(new Event('change'));
+            } else {
+                if (file.size > 4 * 1024 * 1024 * 1024) showToast('warning', 'File is very large (>4GB). Processing may be slow.');
+                var inp = document.getElementById('video-upload');
+                var dt = new DataTransfer(); dt.items.add(file); inp.files = dt.files; inp.dispatchEvent(new Event('change'));
+            }
+        }
+
+        // ============ Session Reset ============
+        function resetAllData() {
+            undoState = { rawData: rawData.slice(), lapsData: lapsData.slice(), videoBlobUrl: videoBlobUrl, videoElements: videoElements.slice(), telemetryCsvText: telemetryCsvText, telemetryDownloadName: telemetryDownloadName, telemetrySource: telemetrySource };
+            if (videoBlobUrl) { URL.revokeObjectURL(videoBlobUrl); videoBlobUrl = null }
+            for (var i = 0; i < videoElements.length; i++) { var v = videoElements[i]; v.element.pause(); v.element.removeAttribute('src'); v.element.load() }
+            videoElements = []; rawData = []; lapsData = []; selectedLapIndices = new Set(['all']);
+            telemetryCsvText = ''; telemetryDownloadName = 'telemetry.csv'; telemetrySource = null;
+            gatePoints = []; isDrawingGate = false;
+            if (gateLayer) { map.removeLayer(gateLayer); gateLayer = null }
+            if (ghostLayer) { map.removeLayer(ghostLayer); ghostLayer = null }
+            playbackState.currentValue = 0; playbackState.isPlaying = false;
+            cancelAnimationFrame(playbackState.animFrameId);
+            if (currentPositionMarker) { map.removeLayer(currentPositionMarker); currentPositionMarker = null }
+            clearABMarkers(); clearBookmarks();
+            document.getElementById('empty-state').classList.remove('hidden');
+            document.getElementById('app-sidebar').classList.add('hidden');
+            document.getElementById('dashboard-content').classList.add('hidden');
+            document.getElementById('file-info').classList.add('hidden');
+            document.getElementById('file-info').classList.remove('flex');
+            document.getElementById('playback-bar').classList.add('hidden');
+            document.getElementById('video-section').classList.add('hidden');
+            document.getElementById('new-session-btn').classList.add('hidden');
+            document.getElementById('draw-gate-btn').disabled = true;
+            document.getElementById('download-csv-btn').classList.add('hidden');
+            document.getElementById('filename-display').textContent = '';
+            document.getElementById('lap-count-display').textContent = '';
+            document.getElementById('csv-upload').value = '';
+            showToast('info', 'Session cleared.', { undoAction: restoreSession });
+            setTimeout(function() { undoState = null }, 5000);
+        }
+        function restoreSession() {
+            if (!undoState) return;
+            rawData = undoState.rawData; videoBlobUrl = undoState.videoBlobUrl;
+            telemetryCsvText = undoState.telemetryCsvText; telemetryDownloadName = undoState.telemetryDownloadName; telemetrySource = undoState.telemetrySource;
+            if (rawData.length > 0) { calculateDefaultSingleLap(); showToast('success', 'Session restored.') }
+            undoState = null;
+        }
+
+        // ============ Video / MP4 Extraction ============
         function handleVideoUpload(event) {
-            const file = event.target.files[0];
+            var file = event.target.files[0];
             if (!file) return;
-            setVideoUploadState(true, file.name.substring(0, 20) + (file.name.length > 20 ? '...' : ''));
+            if (file.size > 4 * 1024 * 1024 * 1024) showToast('warning', 'File is very large (>4GB). Processing may be slow.');
+            var tn = file.name.length > 15 ? file.name.substring(0, 15) + '...' : file.name;
+            setVideoUploadState(true, tn);
+            // Clean up previous video elements
+            for (var vi = 0; vi < videoElements.length; vi++) { var ve = videoElements[vi]; ve.element.pause(); ve.element.removeAttribute('src'); ve.element.load() }
+            videoElements = [];
             if (videoBlobUrl) URL.revokeObjectURL(videoBlobUrl);
             videoBlobUrl = URL.createObjectURL(file);
-            setVideoUploadState(false);
+            var hasCsv = document.getElementById('csv-upload').files && document.getElementById('csv-upload').files.length > 0;
+            (async function() {
+                try {
+                    if (!hasCsv && extractMetadataEnabled) await extractTelemetryFromVideo(file);
+                    else if (hasCsv) document.getElementById('download-csv-btn').classList.add('hidden');
+                } catch (err) { console.error('Video upload error:', err); showToast('error', 'Video upload failed: ' + err.message) }
+                finally { setVideoUploadState(false) }
+            })();
             event.target.value = '';
             if (lapsData.length > 0) updateVisualization();
+        }
+        async function extractTelemetryFromVideo(file) {
+            if (!window.MP4Box) { showToast('error', 'MP4Box library failed to load. Please reload the page.'); return }
+            var fn = file.name.replace(/\.[^/.]+$/, "");
+            var sensors = { ACCL: [], GYRO: [], GPS9: [], GRAV: [], CORI: [] };
+            var gpmdTrackId = null;
+            var timescale = 1000;
+            var tid = showToast('info', 'Extracting telemetry from ' + fn + '...', { duration: 0 });
+            var totalChunks = Math.max(1, Math.ceil(file.size / 65536));
+            var chunkCount = 0;
+            var mp4box = MP4Box.createFile();
+            var promise = new Promise(function(resolve, reject) {
+                mp4box.onReady = function(info) {
+                    var t = info.tracks.find(function(t) { return t.codec === 'gpmd' });
+                    if (!t) { reject(new Error('No GPMD telemetry track found in this video. Upload a CSV instead.')); return }
+                    gpmdTrackId = t.id; timescale = t.timescale; mp4box.setExtractionOptions(gpmdTrackId); mp4box.start();
+                };
+                mp4box.onError = function(error) { reject(error) };
+                mp4box.onSamples = function(id, user, samples) {
+                    if (id !== gpmdTrackId) return;
+                    for (var s = 0; s < samples.length; s++) {
+                        var smp = samples[s];
+                        var ctsMs = (smp.cts / timescale) * 1000;
+                        var durMs = (smp.duration / timescale) * 1000;
+                        parseGPMD(smp.data, ctsMs, durMs, sensors);
+                    }
+                };
+                var reader = file.stream().getReader();
+                var offset = 0;
+                var readChunk = async function() {
+                    var result = await reader.read();
+                    if (result.done) { mp4box.flush(); resolve(); return }
+                    var buf = result.value.buffer;
+                    buf.fileStart = offset;
+                    offset += buf.byteLength;
+                    mp4box.appendBuffer(buf);
+                    chunkCount++;
+                    if (chunkCount % 20 === 0) updateToastProgress(tid, Math.min(100, Math.round((chunkCount / totalChunks) * 100)));
+                    await readChunk();
+                };
+                readChunk().catch(reject);
+            });
+            try { await promise } catch (error) {
+                console.error(error); dismissToast(tid);
+                showToast('error', error.message || 'Telemetry extraction failed. The video may not contain GoPro telemetry data.');
+                return;
+            }
+            dismissToast(tid);
+            telemetryCsvText = buildCombinedTelemetryCsv(sensors, fn);
+            var totalPoints = 0;
+            for (var k in sensors) totalPoints += sensors[k].length;
+            showToast('success', 'Telemetry extracted: ' + totalPoints + ' data points.');
+            telemetrySource = 'video';
+            telemetryDownloadName = fn + '_Full_Telemetry.csv';
+            document.getElementById('download-csv-btn').classList.remove('hidden');
+            document.getElementById('filename-display').textContent = fn + ' \u2022 extracted';
+            Papa.parse(telemetryCsvText, { header: true, dynamicTyping: true, skipEmptyLines: true, complete: function(r) { if (r.errors.length > 0) showToast('warning', 'Telemetry CSV built with ' + r.errors.length + ' warnings.'); processIncomingCSV(r.data) }, error: function(e) { showToast('error', 'Telemetry parsing failed: ' + e.message) } });
+        }
+        function parseGPMD(data, baseCts, duration, sensors) {
+            var i = 0;
+            if (data instanceof ArrayBuffer) data = new Uint8Array(data);
+            var buf = data.buffer || data;
+            var view = new DataView(buf, data.byteOffset, data.byteLength);
+            while (i + 8 <= data.byteLength) {
+                var fourcc = String.fromCharCode(view.getUint8(i), view.getUint8(i + 1), view.getUint8(i + 2), view.getUint8(i + 3));
+                var type = String.fromCharCode(view.getUint8(i + 4));
+                var size = view.getUint8(i + 5);
+                var count = view.getUint16(i + 6);
+                var pSize = size * count;
+                var alignedLen = 8 + Math.ceil(pSize / 4) * 4;
+                if (i + alignedLen > data.byteLength) { i += 8; continue }
+                var payloadStart = i + 8;
+                if (fourcc === 'DEVC' || fourcc === 'STRM') { parseGPMD(data.slice(payloadStart, payloadStart + pSize), baseCts, duration, sensors); i += alignedLen; continue }
+                if (count === 0 || size === 0) { i += alignedLen; continue }
+                if (fourcc === 'TAMP') { i += alignedLen; continue }
+                if (fourcc === 'ACCL' || fourcc === 'GYRO' || fourcc === 'GRAV' || fourcc === 'CORI' || fourcc === 'GPS9') {
+                    var bps = size;
+                    var actualSamples = Math.floor(pSize / bps);
+                    var sampleDur = duration / count;
+                    for (var s = 0; s < actualSamples; s++) {
+                        var off = payloadStart + s * bps;
+                        if (off + bps > data.byteLength) break;
+                        var ts = baseCts + (s * sampleDur);
+                        if (fourcc === 'GPS9') {
+                            if (bps < 32) continue;
+                            var lat = view.getInt32(off) / 1e7, lon = view.getInt32(off + 4) / 1e7, alt = view.getInt32(off + 8) / 1000;
+                            var sp2d = view.getInt32(off + 12) / 1000, sp3d = view.getInt32(off + 16) / 1000;
+                            var days = view.getUint32(off + 20), secs = view.getUint32(off + 24) / 1000, dop = view.getUint16(off + 28) / 100, fix = view.getUint16(off + 30);
+                            var altSys = off + 35 < data.byteLength ? String.fromCharCode(view.getUint8(off + 32), view.getUint8(off + 33), view.getUint8(off + 34), view.getUint8(off + 35)) : 'MSLV';
+                            sensors.GPS9.push({ ts: ts, lat: lat, lon: lon, alt: alt, speed2d: sp2d, speed3d: sp3d, days: days, secs: secs, dop: dop, fix: fix, altSys: altSys });
+                        } else {
+                            var isFloat = type === 'f';
+                            if (fourcc === 'ACCL' || fourcc === 'GYRO' || fourcc === 'GRAV') {
+                                var x = isFloat ? view.getFloat32(off) : view.getInt16(off) / (fourcc === 'GYRO' ? 1000 : fourcc === 'GRAV' ? 4096 : 100);
+                                var y = isFloat ? view.getFloat32(off + 4) : view.getInt16(off + 2) / (fourcc === 'GYRO' ? 1000 : fourcc === 'GRAV' ? 4096 : 100);
+                                var z = isFloat ? view.getFloat32(off + 8) : view.getInt16(off + 4) / (fourcc === 'GYRO' ? 1000 : fourcc === 'GRAV' ? 4096 : 100);
+                                sensors[fourcc].push({ ts: ts, x: x, y: y, z: z });
+                            } else if (fourcc === 'CORI') {
+                                var w = isFloat ? view.getFloat32(off) : view.getInt16(off) / 32767;
+                                var x = isFloat ? view.getFloat32(off + 4) : view.getInt16(off + 2) / 32767;
+                                var y = isFloat ? view.getFloat32(off + 8) : view.getInt16(off + 4) / 32767;
+                                var z = isFloat ? view.getFloat32(off + 12) : view.getInt16(off + 6) / 32767;
+                                sensors.CORI.push({ ts: ts, w: w, x: x, y: y, z: z });
+                            }
+                        }
+                    }
+                }
+                i += alignedLen;
+            }
+        }
+        function buildCombinedTelemetryCsv(sensors, fileName) {
+            var allTs = new Set();
+            for (var k in sensors) { var arr = sensors[k]; for (var i = 0; i < arr.length; i++) allTs.add(arr[i].ts.toFixed(6)) }
+            var sortedTs = Array.from(allTs).sort(function(a, b) { return parseFloat(a) - parseFloat(b) });
+            var maps = {};
+            for (var k in sensors) {
+                maps[k] = new Map();
+                for (var i = 0; i < sensors[k].length; i++) {
+                    var p = sensors[k][i];
+                    var key = p.ts.toFixed(6);
+                    if (!maps[k].has(key) || p.ts < maps[k].get(key).ts) maps[k].set(key, p);
+                }
+            }
+            var gpsBase = new Date(Date.UTC(2000, 0, 1));
+            var header = 'cts,date,ACCL_x,ACCL_y,ACCL_z,temp_ACCL,GYRO_x,GYRO_y,GYRO_z,temp_GYRO,GRAV_x,GRAV_y,GRAV_z,CORI_w,CORI_x,CORI_y,CORI_z,GPS (Lat.) [deg],GPS (Long.) [deg],GPS (Alt.) [m],GPS (2D) [m/s],GPS (3D) [m/s],GPS (days) [deg],GPS (secs) [s],GPS (DOP) [deg],GPS (fix) [deg],altitude system';
+//! IGNORE_THIS_LINE
+            var rows = [header];
+            for (var i = 0; i < sortedTs.length; i++) {
+                var ts = sortedTs[i];
+                var t = parseFloat(ts);
+                var a = maps.ACCL.get(ts), g = maps.GYRO.get(ts), gr = maps.GRAV.get(ts), c = maps.CORI.get(ts), gp = maps.GPS9.get(ts);
+                var acclX = '', acclY = '', acclZ = '', gyroX = '', gyroY = '', gyroZ = '', gravX = '', gravY = '', gravZ = '';
+                var coriW = '', coriX = '', coriY = '', coriZ = '', gpsLat = '', gpsLon = '', gpsAlt = '', gps2d = '', gps3d = '';
+                var gpsDays = '', gpsSecs = '', gpsDop = '', gpsFix = '', altSys = '', dateStr = '';
+                if (a) { acclX = a.x; acclY = a.y; acclZ = a.z }
+                if (g) { gyroX = g.x; gyroY = g.y; gyroZ = g.z }
+                if (gr) { gravX = gr.x; gravY = gr.y; gravZ = gr.z }
+                if (c) { coriW = c.w; coriX = c.x; coriY = c.y; coriZ = c.z }
+                if (gp) { gpsLat = gp.lat; gpsLon = gp.lon; gpsAlt = gp.alt; gps2d = gp.speed2d; gps3d = gp.speed3d; gpsDays = gp.days; gpsSecs = gp.secs; gpsDop = gp.dop; gpsFix = gp.fix; altSys = gp.altSys; dateStr = new Date(gpsBase.getTime() + (gp.days * 86400000) + (gp.secs * 1000)).toISOString() }
+                rows.push([t.toFixed(6), dateStr, acclX, acclY, acclZ, '', gyroX, gyroY, gyroZ, '', gravX, gravY, gravZ, coriW, coriX, coriY, coriZ, gpsLat, gpsLon, gpsAlt, gps2d, gps3d, gpsDays, gpsSecs, gpsDop, gpsFix, altSys].join(','));
+            }
+            return rows.join('\n');
+        }
+        function downloadTelemetryCsv() {
+            if (!telemetryCsvText) return;
+            var blob = new Blob([telemetryCsvText], { type: 'text/csv;charset=utf-8;' });
+            var url = URL.createObjectURL(blob);
+            var a = document.createElement('a'); a.href = url; a.download = telemetryDownloadName; a.click();
+            URL.revokeObjectURL(url);
         }
 
         function setVideoUploadState(isLoading, labelText) {
@@ -374,8 +909,13 @@
         }
 
         function renderVideoMonitorGrid(lapsToRender) {
-            if (!videoBlobUrl || videoElements.length > 0) return;
-            document.getElementById('video-section').classList.remove('hidden');
+            const section = document.getElementById('video-section');
+            if (!videoBlobUrl) {
+                section.style.maxHeight = '0';
+                section.classList.add('hidden');
+                return;
+            }
+            if (videoElements.length > 0 && lapsToRender.length === _renderedLapCount) return;
             const grid = document.getElementById('video-grid');
             grid.innerHTML = '';
             videoElements = [];
@@ -395,8 +935,9 @@
                 const wrapper = document.createElement('div');
                 wrapper.className = 'video-card relative bg-black rounded-xl overflow-hidden flex-shrink-0 border-2 transition-all shadow-lg';
                 wrapper.style.borderColor = color;
-                wrapper.style.width = currentVideoSize + 'px';
-                wrapper.style.height = Math.round(currentVideoSize * 9 / 16) + 'px';
+                const w = currentVideoSize, h = Math.round(w * 9 / 16);
+                wrapper.style.width = w + 'px';
+                wrapper.style.height = h + 'px';
 
                 const video = document.createElement('video');
                 video.src = videoBlobUrl;
@@ -409,8 +950,8 @@
                 overlay.innerHTML = '<i class="ph ph-warning-octagon text-3xl text-red-500 mb-2"></i><p class="text-sm font-bold">Playback Error</p><p class="text-[10px] text-gray-400 mt-1">Check codec support.</p>';
 
                 const badge = document.createElement('div');
-                badge.className = 'absolute top-2 left-2 bg-black/80 backdrop-blur text-white text-xs px-2.5 py-1 rounded-lg font-bold z-10 flex items-center gap-1.5 shadow-sm border border-white/10';
-                badge.innerHTML = '<div class="w-2.5 h-2.5 rounded-full" style="background-color:' + color + '"></div>Lap ' + (index + 1);
+                badge.className = 'absolute top-2 left-2 bg-black/70 backdrop-blur text-white text-[11px] px-2 py-0.5 rounded-md font-bold z-10 flex items-center gap-1.5';
+                badge.innerHTML = '<div class="w-2 h-2 rounded-full" style="background-color:' + color + '"></div>' + (index + 1);
 
                 wrapper.append(video, overlay, badge);
                 grid.appendChild(wrapper);
@@ -423,6 +964,11 @@
                 videoElements.push({ lapIndex: index, element: video, lapData: lap, lastIndex: 0 });
             });
 
+            _renderedLapCount = lapsToShow.length;
+            section.classList.remove('hidden');
+            requestAnimationFrame(function() {
+                requestAnimationFrame(function() { section.style.maxHeight = section.scrollHeight + 'px' });
+            });
             syncVideosToStateTimeline(true);
         }
 
@@ -433,16 +979,44 @@
             gatePoints = [];
             if (gateLayer) { map.removeLayer(gateLayer); gateLayer = null; }
             if (ghostLayer) { map.removeLayer(ghostLayer); ghostLayer = null; }
+            showGateBadge();
             document.getElementById('stepText').innerHTML = '<span class="animate-pulse text-brand-500 font-bold"><i class="ph-fill ph-crosshair"></i> Click map for Gate START point</span>';
         }
 
+        function showGateBadge() { if (document.getElementById('gate-badge')) return; var b = document.createElement('div'); b.id = 'gate-badge'; b.className = 'fixed top-4 left-1/2 -translate-x-1/2 z-[1000] pointer-events-none'; b.innerHTML = '<div class="bg-red-600/90 text-white px-4 py-2 rounded-lg text-sm font-bold shadow-lg whitespace-nowrap pointer-events-auto">Gate Drawing Mode \u2014 Click to place points \u00B7 Esc to cancel</div>'; document.body.appendChild(b); }
+        function hideGateBadge() { var b = document.getElementById('gate-badge'); if (b) b.remove(); }
+
         function resetGate() {
+            gateUndoState = { gatePoints: gatePoints.slice(), gateLayer: gateLayer, lapsData: lapsData.slice(), selectedLapIndices: new Set(selectedLapIndices) };
             gatePoints = [];
             isDrawingGate = false;
             if (gateLayer) { map.removeLayer(gateLayer); gateLayer = null; }
             if (ghostLayer) { map.removeLayer(ghostLayer); ghostLayer = null; }
+            hideGateBadge();
             document.getElementById('stepText').textContent = 'Draw a gate line across the track on the map to automatically split and calculate laps.';
             if (rawData.length > 0) calculateDefaultSingleLap();
+            showToast('info', 'Gate reset. Reverted to single lap.', { undoAction: function() { if (gateUndoState) { gatePoints = gateUndoState.gatePoints; lapsData = gateUndoState.lapsData; selectedLapIndices = gateUndoState.selectedLapIndices; if (gateLayer) map.removeLayer(gateLayer); gateLayer = L.polyline(gatePoints, { color: '#ef4444', weight: 5, opacity: 1 }).addTo(map); updateUIState(); updateVisualization(); showToast('success', 'Gate restored.'); gateUndoState = null } } });
+        }
+
+        var gateMarkers = [];
+        function renderDraggableGateEndpoints() {
+            for (var gi = 0; gi < gateMarkers.length; gi++) map.removeLayer(gateMarkers[gi]);
+            gateMarkers = [];
+            for (var i = 0; i < gatePoints.length; i++) {
+                (function(idx) {
+                    var m = L.circleMarker(gatePoints[idx], { radius: 8, color: '#ef4444', fillColor: '#ef4444', fillOpacity: 0.8, weight: 2, draggable: true }).addTo(map);
+                    m.bindTooltip('Drag to adjust', { permanent: false, direction: 'top', offset: [0, -10] });
+                    m.on('dragend', function(e) {
+                        var np = e.target.getLatLng();
+                        gatePoints[idx] = [np.lat, np.lng];
+                        if (gateLayer) map.removeLayer(gateLayer);
+                        gateLayer = L.polyline(gatePoints, { color: '#ef4444', weight: 5, opacity: 1 }).addTo(map);
+                        calculateLapsWithGate();
+                        showToast('info', 'Gate endpoint adjusted. Laps recalculated.');
+                    });
+                    gateMarkers.push(m);
+                })(i);
+            }
         }
 
         function intersects(a, b, c, d, p, q, r, s) {
@@ -453,54 +1027,110 @@
             return (0 < lambda && lambda < 1) && (0 < gamma && gamma < 1);
         }
 
+        function exportSingleLapCSV(lapIndex) {
+            var lap = lapsData[lapIndex];
+            if (!lap || !lap.length) { showToast('error', 'No data for this lap.'); return }
+            var headers = Object.keys(lap[0]).filter(function(k) { return k !== '__proto__' }).join(',');
+            var csvRows = [headers];
+            for (var i = 0; i < lap.length; i++) {
+                var p = lap[i];
+                var row = headers.split(',').map(function(h) { var v = p[h]; return v === null || v === undefined ? '' : String(v) }).join(',');
+                csvRows.push(row);
+            }
+            var csvText = csvRows.join('\n'), blob = new Blob([csvText], { type: 'text/csv;charset=utf-8;' }), url = URL.createObjectURL(blob);
+            var a = document.createElement('a'); a.href = url; a.download = 'lap_' + (lapIndex + 1) + '_data.csv'; a.click();
+            URL.revokeObjectURL(url);
+            showToast('success', 'Lap ' + (lapIndex + 1) + ' data exported.');
+        }
+
         function calculateLapsWithGate() {
             if (gatePoints.length < 2 || rawData.length === 0) return;
-            const gLng1 = gatePoints[0].lng, gLat1 = gatePoints[0].lat;
-            const gLng2 = gatePoints[1].lng, gLat2 = gatePoints[1].lat;
-            const processedLaps = [];
-            let lastSplitIdx = 0;
-
-            for (let i = 1; i < rawData.length; i++) {
-                const ptA = rawData[i - 1], ptB = rawData[i];
-                if (intersects(ptA.lon, ptA.lat, ptB.lon, ptB.lat, gLng1, gLat1, gLng2, gLat2)) {
-                    if (i - lastSplitIdx > 50) {
-                        processedLaps.push(rawData.slice(lastSplitIdx, i + 1));
-                        lastSplitIdx = i;
-                    }
+            var gLng1 = gatePoints[0].lng, gLat1 = gatePoints[0].lat;
+            var gLng2 = gatePoints[1].lng, gLat2 = gatePoints[1].lat;
+            var out = [];
+            var last = 0;
+            for (var i = 1; i < rawData.length; i++) {
+                var a = rawData[i - 1], b = rawData[i];
+                if (intersects(a.lon, a.lat, b.lon, b.lat, gLng1, gLat1, gLng2, gLat2)) {
+                    if (i - last > 50) { out.push(rawData.slice(last, i + 1)); last = i }
                 }
             }
-            if (rawData.length - lastSplitIdx > 10) processedLaps.push(rawData.slice(lastSplitIdx));
-
-            lapsData = processedLaps.map((points, idx) => {
-                if (points.length === 0) return null;
-                const baseDist = points[0].totalDistance, baseTime = points[0].time;
-                const normalized = points.map(p => ({ ...p, lap: idx + 1, lapDistance: p.totalDistance - baseDist }));
-                normalized.duration = points[points.length - 1].time - baseTime;
-                normalized.maxDistance = points[points.length - 1].totalDistance - baseDist;
-                return normalized;
-            }).filter(l => l !== null);
-
+            if (rawData.length - last > 10) out.push(rawData.slice(last));
+            lapsData = out.map(function(pts, idx) {
+                if (!pts.length) return null;
+                var bd = pts[0].totalDistance, bt = pts[0].time;
+                var n = pts.map(function(p) { return Object.assign({}, p, { lap: idx + 1, lapDistance: p.totalDistance - bd }) });
+                n.duration = pts[pts.length - 1].time - bt;
+                n.maxDistance = pts[pts.length - 1].totalDistance - bd;
+                n.sectors = computeSectors(n);
+                return n;
+            }).filter(function(l) { return l });
             selectedLapIndices = new Set(['all']);
+            buildLapLookups();
+            autoSelectReferenceLap();
+            computeBestSectors();
             updateUIState();
             updateVisualization();
+            renderDraggableGateEndpoints();
+        }
+
+        // ============ Sectors ============
+        function computeSectors(lap) {
+            if (!lap || lap.length < 3) return null;
+            var md = lap.maxDistance; if (md <= 0) return null;
+            var t33 = md * 0.33, t66 = md * 0.66;
+            var i33 = lap.length - 1, i66 = lap.length - 1;
+            for (var i = 0; i < lap.length; i++) { if (lap[i].lapDistance >= t33 && i33 === lap.length - 1) i33 = i; if (lap[i].lapDistance >= t66 && i66 === lap.length - 1) i66 = i }
+            i33 = Math.max(1, Math.min(i33, lap.length - 1)); i66 = Math.max(i33 + 1, Math.min(i66, lap.length - 1));
+            return [{ startIndex: 0, endIndex: i33, time: lap[i33].time - lap[0].time, distance: lap[i33].lapDistance - lap[0].lapDistance }, { startIndex: i33, endIndex: i66, time: lap[i66].time - lap[i33].time, distance: lap[i66].lapDistance - lap[i33].lapDistance }, { startIndex: i66, endIndex: lap.length - 1, time: lap[lap.length - 1].time - lap[i66].time, distance: lap[lap.length - 1].lapDistance - lap[i66].lapDistance }];
+        }
+        function computeBestSectors() {
+            bestSectors = { s1: Infinity, s2: Infinity, s3: Infinity };
+            for (var i = 0; i < lapsData.length; i++) { var l = lapsData[i]; if (!l.sectors) continue; if (l.sectors[0] && l.sectors[0].time > 0 && l.sectors[0].time < bestSectors.s1) bestSectors.s1 = l.sectors[0].time; if (l.sectors[1] && l.sectors[1].time > 0 && l.sectors[1].time < bestSectors.s2) bestSectors.s2 = l.sectors[1].time; if (l.sectors[2] && l.sectors[2].time > 0 && l.sectors[2].time < bestSectors.s3) bestSectors.s3 = l.sectors[2].time }
+        }
+
+        // ============ Reference Lap ============
+        function autoSelectReferenceLap() {
+            if (!lapsData || !lapsData.length) return;
+            var fi = 0, ft = Infinity;
+            for (var i = 0; i < lapsData.length; i++) { var d = lapsData[i].duration || 0; if (d > 0 && d < ft) { ft = d; fi = i } }
+            referenceLapId = ft === Infinity ? 0 : fi;
+        }
+        function findClosestByDistance(lap, target) {
+            var c = lap[0], md = Infinity;
+            for (var i = 0; i < lap.length; i++) { var d = Math.abs(lap[i].lapDistance - target); if (d < md) { md = d; c = lap[i] } }
+            return c;
+        }
+
+        // ============ Lap Lookups ============
+        function buildLapLookups() {
+            for (var li = 0; li < lapsData.length; li++) {
+                var lap = lapsData[li];
+                var dl = [], tl = [];
+                for (var i = 0; i < lap.length; i++) { dl.push({ dist: lap[i].lapDistance, time: lap[i].time, index: i }); tl.push({ time: lap[i].time - lap[0].time, dist: lap[i].lapDistance, index: i }) }
+                lap._distanceLookup = dl;
+                lap._timeLookup = tl;
+            }
         }
 
         // ============ CSV Processing ============
         function handleFileUpload(event) {
-            const file = event.target.files[0];
+            var file = event.target.files[0];
             if (!file) return;
             filename = file.name;
-            const reader = new FileReader();
+                if (file.size > 50 * 1024 * 1024) showToast('warning', 'File is very large (>50MB). Processing may be slow.');
+            // Clear any existing video when uploading a new CSV
+            if (videoBlobUrl) { URL.revokeObjectURL(videoBlobUrl); videoBlobUrl = null; }
+            videoElements = [];
+            document.getElementById('video-grid').innerHTML = '';
+            var vs = document.getElementById('video-section');
+            if (vs) { vs.style.maxHeight = '0'; setTimeout(function() { vs.classList.add('hidden') }, 300) }
+            var reader = new FileReader();
             reader.onload = function(e) {
-                const text = e.target.result;
-                Papa.parse(text, {
-                    header: true,
-                    dynamicTyping: true,
-                    skipEmptyLines: true,
-                    complete: function(results) {
-                        processIncomingCSV(results.data);
-                    }
-                });
+                var text = e.target.result;
+                var progressToastId = null;
+                if (file.size > 5 * 1024 * 1024) progressToastId = showToast('info', 'Parsing CSV...', { duration: 0 });
+                Papa.parse(text, { header: true, dynamicTyping: true, skipEmptyLines: true, step: function(row, parser) { if (progressToastId) { var meta = parser.getMeta(); var pct = Math.min(100, Math.round((meta.cursor / file.size) * 100)); updateToastProgress(progressToastId, pct) } }, complete: function(results) { if (progressToastId) dismissToast(progressToastId); if (results.errors.length > 0) showToast('warning', 'CSV parsed with ' + results.errors.length + ' errors. Some data may be incomplete.'); processIncomingCSV(results.data); showToast('success', 'Loaded ' + results.data.length + ' data points.'); telemetryCsvText = text; telemetryDownloadName = filename.replace(/\.[^/.]+$/, '') + '_Telemetry.csv'; document.getElementById('download-csv-btn').classList.remove('hidden'); }, error: function(err) { if (progressToastId) dismissToast(progressToastId); showToast('error', 'CSV parsing failed: ' + err.message); } });
             };
             reader.readAsText(file);
             event.target.value = '';
@@ -512,81 +1142,48 @@
             if (ghostLayer) { map.removeLayer(ghostLayer); ghostLayer = null; }
             gatePoints = [];
             isDrawingGate = false;
+            hideGateBadge();
             document.getElementById('stepText').textContent = 'Draw a gate line across the track on the map to automatically split and calculate laps.';
-            if (videoBlobUrl) { URL.revokeObjectURL(videoBlobUrl); videoBlobUrl = null; }
-            videoElements = [];
-            document.getElementById('video-section').classList.add('hidden');
-            document.getElementById('video-grid').innerHTML = '';
-            const first = data[0];
-            const keys = Object.keys(first);
+            var first = data[0], keys = Object.keys(first);
 
-            const latKey = keys.find(k => /lat/i.test(k));
-            const lonKey = keys.find(k => /lon/i.test(k) || /long/i.test(k));
-            const speedKey = keys.find(k => /2D/i.test(k) || /speed/i.test(k) || /3D/i.test(k));
-            const timeKey = keys.find(k => /cts/i.test(k) || /date/i.test(k) || /time/i.test(k));
+            var latKey = keys.find(function(k) { return /lat/i.test(k) });
+            var lonKey = keys.find(function(k) { return /lon/i.test(k) || /long/i.test(k) });
+            var speedKey = keys.find(function(k) { return /2D/i.test(k) || /speed/i.test(k) || /3D/i.test(k) });
+            var timeKey = keys.find(function(k) { return /cts/i.test(k) || /date/i.test(k) || /time/i.test(k) });
 
-            if (!latKey || !lonKey) {
-                console.warn('No GPS columns found in CSV');
-                return;
+            if (!latKey || !lonKey) { showToast('warning', 'No GPS data found in CSV. Check column names.'); return }
+
+            var clean = [];
+            var startTime = null, prevLat = null, prevLon = null, cumulativeDist = 0;
+
+            for (var idx = 0; idx < data.length; idx++) {
+                var row = data[idx];
+                var lat = parseFloat(row[latKey]), lon = parseFloat(row[lonKey]);
+                if (isNaN(lat) || isNaN(lon)) continue;
+
+                var speed = 0;
+                if (speedKey) {
+                    var raw = parseFloat(row[speedKey] || 0);
+                    var sv = raw * 3.6;
+                    if (row[speedKey] && row[speedKey].toString().includes('km/h')) sv = parseFloat(row[speedKey]);
+                    speed = sv;
+                }
+
+                var timestamp = 0;
+                if (row[timeKey]) {
+                    if (!isNaN(row[timeKey]) && row[timeKey] > 100000) { if (startTime === null) startTime = row[timeKey]; timestamp = (row[timeKey] - startTime) / 1000 } else { var t = new Date(row[timeKey]).getTime(); if (!isNaN(t)) { if (startTime === null) startTime = t; timestamp = (t - startTime) / 1000 } else timestamp = idx * 0.1 }
+                } else timestamp = idx * 0.1;
+
+                if (prevLat !== null && prevLon !== null) cumulativeDist += getDistanceFromLatLonInM(prevLat, prevLon, lat, lon);
+                prevLat = lat; prevLon = lon;
+
+                var speedMS = 0;
+                if (speedKey) { speedMS = parseFloat(row[speedKey] || 0); if (row[speedKey] && row[speedKey].toString().includes('km/h')) speedMS /= 3.6 }
+
+                clean.push({ index: idx, lat: lat, lon: lon, speed: speed, speedMS: speedMS, time: timestamp, totalDistance: cumulativeDist, rowId: idx, alt: parseFloat(row['GPS (Alt.) [m]']) || parseFloat(row['alt']) || undefined });
             }
 
-            const clean = [];
-            let startTime = null;
-            let prevLat = null, prevLon = null, cumulativeDist = 0;
-
-            data.forEach((row, index) => {
-                const lat = parseFloat(row[latKey]);
-                const lon = parseFloat(row[lonKey]);
-                if (isNaN(lat) || isNaN(lon)) return;
-
-                let speed = 0;
-                if (speedKey) {
-                    const rawSpeed = parseFloat(row[speedKey] || 0);
-                    let speedVal = rawSpeed * 3.6;
-                    if (row[speedKey] && row[speedKey].toString().includes('km/h')) {
-                        speedVal = parseFloat(row[speedKey]);
-                    }
-                    speed = speedVal;
-                }
-
-                let timestamp = 0;
-                if (row[timeKey]) {
-                    if (!isNaN(row[timeKey]) && row[timeKey] > 100000) {
-                        if (startTime === null) startTime = row[timeKey];
-                        timestamp = (row[timeKey] - startTime) / 1000;
-                    } else {
-                        const t = new Date(row[timeKey]).getTime();
-                        if (!isNaN(t)) {
-                            if (startTime === null) startTime = t;
-                            timestamp = (t - startTime) / 1000;
-                        } else {
-                            timestamp = index * 0.1;
-                        }
-                    }
-                } else { timestamp = index * 0.1; }
-
-                if (prevLat !== null && prevLon !== null) {
-                    cumulativeDist += getDistanceFromLatLonInM(prevLat, prevLon, lat, lon);
-                }
-                prevLat = lat;
-                prevLon = lon;
-
-                let speedMS = 0;
-                if (speedKey) {
-                    speedMS = parseFloat(row[speedKey] || 0);
-                    if (row[speedKey] && row[speedKey].toString().includes('km/h')) speedMS = speedMS / 3.6;
-                }
-
-                clean.push({
-                    index, lat, lon, speed,
-                    speedMS,
-                    time: timestamp,
-                    totalDistance: cumulativeDist,
-                    rowId: index
-                });
-            });
-
-            if (clean.length === 0) return;
+            if (clean.length === 0) { showToast('warning', 'All GPS values are invalid.'); return }
             rawData = clean;
             document.getElementById('draw-gate-btn').disabled = false;
             calculateDefaultSingleLap();
@@ -594,13 +1191,16 @@
 
         function calculateDefaultSingleLap() {
             if (rawData.length === 0) return;
-            const first = rawData[0];
-            const last = rawData[rawData.length - 1];
-            const loopTrace = rawData.map(p => ({ ...p, lap: 1, lapDistance: p.totalDistance }));
+            var first = rawData[0], last = rawData[rawData.length - 1];
+            var loopTrace = rawData.map(function(p) { return Object.assign({}, p, { lap: 1, lapDistance: p.totalDistance }) });
             loopTrace.duration = last.time - first.time;
             loopTrace.maxDistance = last.totalDistance;
+            loopTrace.sectors = computeSectors(loopTrace);
             lapsData = [loopTrace];
             selectedLapIndices = new Set(['all']);
+            buildLapLookups();
+            autoSelectReferenceLap();
+            computeBestSectors();
             updateUIState();
             updateVisualization();
         }
@@ -610,23 +1210,55 @@
             document.getElementById('empty-state').classList.add('hidden');
             document.getElementById('app-sidebar').classList.remove('hidden');
             document.getElementById('dashboard-content').classList.remove('hidden');
-            const fileInfo = document.getElementById('file-info');
-            fileInfo.classList.remove('hidden');
-            fileInfo.classList.add('flex');
+            var fi = document.getElementById('file-info');
+            fi.classList.remove('hidden');
+            fi.classList.add('flex');
             document.getElementById('playback-bar').classList.remove('hidden');
+            document.getElementById('new-session-btn').classList.remove('hidden');
             document.getElementById('filename-display').textContent = filename;
             document.getElementById('lap-count-display').textContent = lapsData.length + ' Lap' + (lapsData.length !== 1 ? 's' : '');
             renderLapList();
+            renderStatisticsPanel();
             updateScrubberScalingBoundaries(getSelectedLaps());
-            setTimeout(() => {
-                if (map) {
-                    map.invalidateSize();
-                    const bounds = rawData.map(p => [p.lat, p.lon]);
-                    map.fitBounds(bounds, { padding: [30, 30] });
-                }
+            setTimeout(function() {
+                if (map) { map.invalidateSize(); var b = []; for (var i = 0; i < rawData.length; i++) b.push([rawData[i].lat, rawData[i].lon]); map.fitBounds(b, { padding: [30, 30] }) }
                 if (document.getElementById('chart-speed-dist').data) Plotly.Plots.resize('chart-speed-dist');
                 if (document.getElementById('chart-speed-time').data) Plotly.Plots.resize('chart-speed-time');
             }, 150);
+        }
+
+        // ============ Statistics Panel ============
+        function computeLapStatistics(lap) {
+            var speeds = [];
+            for (var i = 0; i < lap.length; i++) { if (!isNaN(lap[i].speed) && lap[i].speed > 0) speeds.push(lap[i].speed) }
+            var avg = speeds.length > 0 ? speeds.reduce(function(a, b) { return a + b }, 0) / speeds.length : (lap.maxDistance / lap.duration) * 3.6;
+            var mx = speeds.length > 0 ? Math.max.apply(null, speeds) : 0;
+            var mn = speeds.length > 0 ? Math.min.apply(null, speeds) : 0;
+            var maxG = 0;
+            for (var i = 1; i < lap.length; i++) {
+                var d = lap[i].lapDistance - lap[i - 1].lapDistance;
+                if (d > 0.1) { var v = (lap[i].speedMS + lap[i - 1].speedMS) / 2; var r = (d * d) / (2 * Math.abs(lap[i].lapDistance - lap[i - 1].lapDistance) || 1); var g = (v * v) / (r * 9.81); if (g > maxG) maxG = g }
+            }
+            return { avgSpeed: avg.toFixed(1), maxSpeed: mx.toFixed(1), minSpeed: mn.toFixed(1), maxLatG: maxG.toFixed(3), distance: lap.maxDistance.toFixed(0) };
+        }
+        function renderStatisticsPanel() {
+            var tbody = document.getElementById('stats-body');
+            if (!tbody) return;
+            tbody.innerHTML = '';
+            var bt = referenceLapId >= 0 ? lapsData[referenceLapId] && lapsData[referenceLapId].duration : Math.min.apply(null, lapsData.map(function(l) { return l.duration }).filter(function(d) { return d > 0 }));
+            var indices = [];
+            for (var i = 0; i < lapsData.length; i++) indices.push(i);
+            indices.sort(function(a, b) { return statsSortKey === 'time' ? (lapsData[a].duration - lapsData[b].duration) * (statsSortAsc ? 1 : -1) : statsSortKey === 'delta' ? (function() { var da = referenceLapId >= 0 && a !== referenceLapId && lapsData[referenceLapId] && lapsData[referenceLapId].duration > 0 ? lapsData[a].duration - lapsData[referenceLapId].duration : 0; var db = referenceLapId >= 0 && b !== referenceLapId && lapsData[referenceLapId] && lapsData[referenceLapId].duration > 0 ? lapsData[b].duration - lapsData[referenceLapId].duration : 0; return da - db })() * (statsSortAsc ? 1 : -1) : a - b });
+            for (var si = 0; si < indices.length; si++) {
+                var li = indices[si];
+                var lap = lapsData[li], s = computeLapStatistics(lap);
+                var delta = (referenceLapId >= 0 && li !== referenceLapId && lapsData[referenceLapId] && lapsData[referenceLapId].duration > 0) ? lap.duration - lapsData[referenceLapId].duration : 0;
+                var isBest = delta === 0 && lapsData.length > 1;
+                var tr = document.createElement('tr');
+                tr.className = 'border-b border-gray-100 dark:border-gray-800/50 hover:bg-gray-50 dark:hover:bg-gray-800/50 transition-colors' + (isBest ? ' bg-[#22c55e]/10' : '');
+                tr.innerHTML = '<td class="px-1 py-1 text-left font-semibold text-gray-700 dark:text-gray-300">' + (li + 1) + '</td><td class="px-1 py-1 text-right text-gray-600 dark:text-gray-400">' + formatTime(lap.duration) + '</td><td class="px-1 py-1 text-right text-gray-600 dark:text-gray-400">' + s.avgSpeed + '</td><td class="px-1 py-1 text-right text-gray-600 dark:text-gray-400 font-semibold">' + s.maxSpeed + '</td><td class="px-1 py-1 text-right font-semibold ' + (isBest ? 'text-[#22c55e]' : 'text-[#ef4444]') + '">' + (isBest ? 'Best' : '+' + delta.toFixed(3) + 's') + '</td>';
+                tbody.appendChild(tr);
+            }
         }
 
         // ============ Leaflet Map ============
@@ -642,38 +1274,96 @@
 
             map.on('mousemove', handleMapMouseMove);
             map.on('click', handleMapClick);
+
+            // GPS coordinate display
+            var cc = L.control({ position: 'bottomleft' });
+            cc.onAdd = function() { var d = L.DomUtil.create('div', 'coord-display'); d.innerHTML = '<span class="coord-text" style="background:rgba(0,0,0,0.7);color:#fff;font-family:JetBrains Mono,monospace;font-size:11px;padding:4px 8px;border-radius:4px;white-space:nowrap;backdrop-filter:blur(4px)">--, --</span>'; return d };
+            cc.addTo(map);
+
+            // Speed heatmap toggle
+            var hc = L.control({ position: 'topright' });
+            hc.onAdd = function() {
+                var c = L.DomUtil.create('div', 'leaflet-bar leaflet-control');
+                c.innerHTML = '<a id="speed-heatmap-btn" href="#" title="Toggle Speed Heatmap" role="button" style="width:30px;height:30px;line-height:30px;display:flex;align-items:center;justify-content:center;background:white;color:#333;font-size:14px;border-radius:2px;cursor:pointer"><i class="ph ph-speedometer"></i></a>';
+                c.addEventListener('click', function(e) { e.preventDefault(); e.stopPropagation(); speedHeatmapActive = !speedHeatmapActive; var btn = document.getElementById('speed-heatmap-btn'); var icon = btn && btn.querySelector('.ph'); if (icon) icon.style.color = speedHeatmapActive ? '#3b82f6' : '#333'; updateVisualization() });
+                return c;
+            };
+            hc.addTo(map);
+
+            // Fullscreen control
+            var fc = L.Control.extend({ onAdd: function(m) { var c = L.DomUtil.create('div', 'leaflet-bar leaflet-control'); c.innerHTML = '<a id="map-fullscreen-btn" href="#" title="Toggle Fullscreen" role="button" style="width:30px;height:30px;line-height:30px;display:flex;align-items:center;justify-content:center;background:white;color:#333;font-size:16px;border-radius:2px;cursor:pointer"><i class="ph ph-arrows-out"></i></a>'; c.addEventListener('click', function(e) { e.preventDefault(); e.stopPropagation(); toggleMapFullscreen() }); return c } });
+            new fc({ position: 'topright' }).addTo(map);
+
+            // Update coord display on mousemove
+            map.on('mousemove', function(e) {
+                var text = document.querySelector('.coord-text');
+                if (text) text.textContent = e.latlng.lat.toFixed(6) + ', ' + e.latlng.lng.toFixed(6);
+            });
         }
 
         function renderMap(lapsToRender) {
             polylineLayerGroup.clearLayers();
-            Object.values(lapMarkers).forEach(m => map.removeLayer(m));
+            for (var k in lapMarkers) { if (lapMarkers.hasOwnProperty(k)) map.removeLayer(lapMarkers[k]) }
             lapMarkers = {};
-            let allLatLngs = [];
+            var allLatLngs = [];
 
-            lapsToRender.forEach(item => {
-                const { lap, index } = item;
-                const color = COLORS[index % COLORS.length];
-                const latlngs = lap.map(p => [p.lat, p.lon]);
-                allLatLngs = allLatLngs.concat(latlngs);
-
-                L.polyline(latlngs, { color, weight: 4, opacity: 0.85 }).addTo(polylineLayerGroup);
-
-                const startPt = lap[0];
-                lapMarkers[index] = L.circleMarker([startPt.lat, startPt.lon], {
-                    radius: 5, color: '#fff', weight: 2, fillColor: color, fillOpacity: 1
-                }).addTo(polylineLayerGroup);
-            });
-
-            if (allLatLngs.length > 0) {
-                const firstPt = allLatLngs[0];
-                if (!currentPositionMarker) {
-                    currentPositionMarker = L.circleMarker(firstPt, {
-                        radius: 8, color: '#fff', fillColor: '#facc15', fillOpacity: 1, weight: 2
-                    }).addTo(map);
-                } else {
-                    currentPositionMarker.setLatLng(firstPt);
+            function renderHeatmapForLap(lap) {
+                if (lap.length < 5) return;
+                var speeds = [];
+                for (var i = 0; i < lap.length; i++) speeds.push(lap[i].speed);
+                var minS = Math.min.apply(null, speeds), maxS = Math.max.apply(null, speeds);
+                var segS = 5;
+                for (var i = 0; i < lap.length - segS; i += segS) {
+                    var seg = lap.slice(i, i + segS + 1);
+                    var sum = 0; for (var si = 0; si < seg.length; si++) sum += seg[si].speed;
+                    var avg = sum / seg.length;
+                    var ratio = (maxS - minS) ? (avg - minS) / (maxS - minS) : 0.5;
+                    var sc = ratio < 0.2 ? '#ef4444' : ratio < 0.7 ? '#eab308' : '#22c55e';
+                    var lls = []; for (var si = 0; si < seg.length; si++) lls.push([seg[si].lat, seg[si].lon]);
+                    L.polyline(lls, { color: sc, weight: 3, opacity: 0.9, smoothFactor: 1 }).addTo(polylineLayerGroup);
+                    for (var si = 0; si < lls.length; si++) allLatLngs.push(lls[si]);
                 }
             }
+
+            for (var li = 0; li < lapsToRender.length; li++) {
+                var item = lapsToRender[li];
+                var lap = item.lap, index = item.index;
+                var color = COLORS[index % COLORS.length];
+
+                if (speedHeatmapActive) { renderHeatmapForLap(lap); continue }
+
+                if (lap.sectors && lap.sectors.length === 3) {
+                    for (var si = 0; si < lap.sectors.length; si++) {
+                        var sec = lap.sectors[si];
+                        var seg = lap.slice(sec.startIndex, sec.endIndex + 1);
+                        if (seg.length < 2) continue;
+                        var bt = [bestSectors.s1, bestSectors.s2, bestSectors.s3][si];
+                        var sc;
+                        if (!bt || bt <= 0) sc = color;
+                        else if (Math.abs(sec.time - bt) < 0.001) sc = '#22c55e';
+                        else if (sec.time > bt * 1.1) sc = '#ef4444';
+                        else sc = '#94a3b8';
+                        var ll = []; for (var si2 = 0; si2 < seg.length; si2++) { ll.push([seg[si2].lat, seg[si2].lon]); allLatLngs.push([seg[si2].lat, seg[si2].lon]) }
+                        L.polyline(ll, { color: sc, weight: 3, opacity: 0.85, smoothFactor: 1 }).addTo(polylineLayerGroup);
+                        var sp = seg[0];
+                        lapMarkers[index] = L.circleMarker([sp.lat, sp.lon], { radius: 5, color: '#fff', weight: 2, fillColor: color, fillOpacity: 1 }).addTo(polylineLayerGroup);
+                    }
+                } else {
+                    var latlngs = [];
+                    for (var pi = 0; pi < lap.length; pi++) { latlngs.push([lap[pi].lat, lap[pi].lon]); allLatLngs.push([lap[pi].lat, lap[pi].lon]) }
+                    L.polyline(latlngs, { color: color, weight: 4, opacity: 0.85 }).addTo(polylineLayerGroup);
+                    var sp = lap[0];
+                    lapMarkers[index] = L.circleMarker([sp.lat, sp.lon], { radius: 5, color: '#fff', weight: 2, fillColor: color, fillOpacity: 1 }).addTo(polylineLayerGroup);
+                }
+            }
+
+            if (allLatLngs.length > 0) {
+                var firstPt = allLatLngs[0];
+                if (!currentPositionMarker) currentPositionMarker = L.circleMarker(firstPt, { radius: 8, color: '#fff', fillColor: '#facc15', fillOpacity: 1, weight: 2 }).addTo(map);
+                else currentPositionMarker.setLatLng(firstPt);
+            }
+            // Bookmark pins
+            renderBookmarkMapPins();
         }
 
         function handleMapMouseMove(e) {
@@ -685,20 +1375,41 @@
         }
 
         function handleMapClick(e) {
-            if (!isDrawingGate || rawData.length === 0) return;
-            if (gatePoints.length === 0) {
-                gatePoints.push(e.latlng);
-                document.getElementById('stepText').innerHTML = '<span class="animate-pulse text-brand-500 font-bold"><i class="ph-fill ph-crosshair"></i> Click map for Gate END point</span>';
-            } else if (gatePoints.length === 1) {
-                gatePoints.push(e.latlng);
-                isDrawingGate = false;
-                if (ghostLayer) { map.removeLayer(ghostLayer); ghostLayer = null; }
-                gateLayer = L.polyline([gatePoints[0], gatePoints[1]], {
-                    color: '#ef4444', weight: 5, opacity: 1
-                }).addTo(map);
-                document.getElementById('stepText').innerHTML = '<span class="text-green-500 font-bold"><i class="ph-fill ph-check-circle"></i> Gate Locked! Calculating splits...</span>';
-                calculateLapsWithGate();
+            if (isDrawingGate && rawData.length > 0) {
+                if (gatePoints.length === 0) {
+                    gatePoints.push(e.latlng);
+                    document.getElementById('stepText').innerHTML = '<span class="animate-pulse text-brand-500 font-bold"><i class="ph-fill ph-crosshair"></i> Click map for Gate END point</span>';
+                } else if (gatePoints.length === 1) {
+                    gatePoints.push(e.latlng);
+                    isDrawingGate = false;
+                    hideGateBadge();
+                    if (ghostLayer) { map.removeLayer(ghostLayer); ghostLayer = null; }
+                    gateLayer = L.polyline([gatePoints[0], gatePoints[1]], { color: '#ef4444', weight: 5, opacity: 1 }).addTo(map);
+                    document.getElementById('stepText').innerHTML = '<span class="text-green-500 font-bold"><i class="ph-fill ph-check-circle"></i> Gate Locked! Calculating splits...</span>';
+                    calculateLapsWithGate();
+                }
+                return;
             }
+            // Click to seek
+            if (lapsData.length === 0) return;
+            var md = Infinity, nn = null;
+            for (var li = 0; li < lapsData.length; li++) {
+                var lap = lapsData[li];
+                for (var pi = 0; pi < lap.length; pi++) {
+                    var p = lap[pi];
+                    var d = getDistanceFromLatLonInM(e.latlng.lat, e.latlng.lng, p.lat, p.lon);
+                    if (d < md) { md = d; nn = { point: p, lapIndex: li } }
+                }
+            }
+            if (!nn || !nn.point || md > 50) return;
+            if (playbackState.isPlaying) togglePlayback();
+            var sv = playbackState.mode === 'distance' ? nn.point.lapDistance : nn.point.time;
+            manualSeek(sv);
+            // Pulse animation
+            var pulse = L.circleMarker(e.latlng, { radius: 15, color: '#3b82f6', fillColor: '#3b82f6', fillOpacity: 0.6, weight: 2, opacity: 1 }).addTo(map);
+            var st = performance.now();
+            function anim(t) { var e2 = Math.min((t - st) / 500, 1); var pct = 1 - Math.pow(1 - e2, 3); pulse.setStyle({ radius: 15 + pct * 10, opacity: 1 - pct, fillOpacity: (1 - pct) * 0.6 }); if (e2 < 1) requestAnimationFrame(anim); else map.removeLayer(pulse) }
+            requestAnimationFrame(anim);
         }
 
         // ============ Playback Engine ============
@@ -1167,6 +1878,121 @@
             renderVideoMonitorGrid(lapsToRender);
         }
 
+        // ============ Bookmarks & Markers ============
+        function renderBookmarkMapPins() {
+            for (var k in bookmarkMapMarkers) { if (bookmarkMapMarkers.hasOwnProperty(k)) map.removeLayer(bookmarkMapMarkers[k]) }
+            bookmarkMapMarkers = {};
+            for (var bi = 0; bi < bookmarks.length; bi++) {
+                var bk = bookmarks[bi];
+                if (!bk.dataPoint) continue;
+                var m = L.circleMarker([bk.dataPoint.lat, bk.dataPoint.lon], { radius: 6, color: '#f59e0b', fillColor: '#f59e0b', fillOpacity: 0.8, weight: 2, opacity: 1 }).addTo(map);
+                m.bindTooltip(bk.label || 'Bookmark ' + (bi + 1), { permanent: false, direction: 'top', offset: [0, -8], className: 'bookmark-tooltip' });
+                m.on('click', function(idx, dp) { return function() { if (playbackState.isPlaying) togglePlayback(); var sv = playbackState.mode === 'distance' ? dp.lapDistance : dp.time; manualSeek(sv) } }(bi, bk.dataPoint));
+                bookmarkMapMarkers['bk_' + bi] = m;
+            }
+        }
+        function addBookmark(dataPoint, label) {
+            bookmarks.push({ dataPoint: dataPoint, label: label || 'Bookmark ' + (bookmarks.length + 1) });
+            renderBookmarkList();
+            renderBookmarkMapPins();
+            showToast('success', 'Bookmark added.');
+        }
+        function removeBookmark(idx) {
+            if (idx < 0 || idx >= bookmarks.length) return;
+            bookmarks.splice(idx, 1);
+            renderBookmarkList();
+            renderBookmarkMapPins();
+        }
+        function clearBookmarks() { bookmarks = []; renderBookmarkList(); renderBookmarkMapPins() }
+        function renderBookmarkList() {
+            var c = document.getElementById('bookmarks-content');
+            if (!c) return;
+            c.innerHTML = '';
+            if (bookmarks.length === 0) { c.classList.add('hidden'); c.parentElement.classList.add('hidden'); return }
+            c.classList.remove('hidden'); c.parentElement.classList.remove('hidden');
+            for (var i = 0; i < bookmarks.length; i++) {
+                var bk = bookmarks[i];
+                var el = document.createElement('div');
+                el.className = 'flex items-center justify-between py-1 px-1 rounded hover:bg-gray-100 dark:hover:bg-gray-800 transition-colors';
+                el.innerHTML = '<span class="text-xs font-medium text-gray-600 dark:text-gray-400 truncate flex-1">' + bk.label + '</span><button class="bk-del text-gray-400 hover:text-red-500 transition-colors text-xs p-1" data-idx="' + i + '"><i class="ph ph-x"></i></button>';
+                el.querySelector('.bk-del').addEventListener('click', function(e) { e.stopPropagation(); removeBookmark(parseInt(e.currentTarget.dataset.idx)) });
+                el.addEventListener('click', function(dp) { return function() { if (playbackState.isPlaying) togglePlayback(); var sv = playbackState.mode === 'distance' ? dp.lapDistance : dp.time; manualSeek(sv) } }(bk.dataPoint));
+                c.appendChild(el);
+            }
+        }
+
+        function clearABMarkers() {
+            for (var k in abMarkers) { if (abMarkers.hasOwnProperty(k)) map.removeLayer(abMarkers[k]) }
+            abMarkers = {};
+        }
+
+        // ============ Map Fullscreen ============
+        function toggleMapFullscreen() {
+            var mp = document.getElementById('map-panel');
+            if (!document.fullscreenElement) {
+                if (mp.requestFullscreen) mp.requestFullscreen();
+                else if (mp.webkitRequestFullscreen) mp.webkitRequestFullscreen();
+                else if (mp.msRequestFullscreen) mp.msRequestFullscreen();
+            } else {
+                if (document.exitFullscreen) document.exitFullscreen();
+                else if (document.webkitExitFullscreen) document.webkitExitFullscreen();
+                else if (document.msExitFullscreen) document.msExitFullscreen();
+            }
+        }
+
+        // ============ Session Management ============
+        var sessionHistory = [];
+        var currentSessionIndex = -1;
+
+        function loadSession(sessionData, sessionName) {
+            filename = sessionName || 'Session ' + (sessionHistory.length + 1);
+            rawData = sessionData.rawData || [];
+            var loadedVideoBlobUrl = sessionData.videoBlobUrl || null;
+            if (sessionData.lapsData && sessionData.lapsData.length > 0) {
+                lapsData = sessionData.lapsData;
+                selectedLapIndices = new Set(['all']);
+                buildLapLookups();
+                autoSelectReferenceLap();
+                computeBestSectors();
+                updateUIState();
+                updateVisualization();
+            } else if (rawData.length > 0) {
+                calculateDefaultSingleLap();
+            }
+            if (loadedVideoBlobUrl && sessionData.videoFile) { handleVideoUpload({ target: { files: [sessionData.videoFile] } }) }
+            showToast('success', 'Loaded: ' + filename);
+        }
+
+        function showLap(idx) {
+            if (idx < 0 || idx >= lapsData.length) return;
+            selectedLapIndices = new Set([idx]);
+            document.querySelectorAll('.lap-checkbox').forEach(function(cb) { if (cb.value === 'all') cb.checked = false; else cb.checked = cb.value === String(idx) });
+            updateVisualization();
+        }
+
+        function newSession() {
+            if (lapsData.length > 0) {
+                sessionHistory.push({ rawData: rawData.slice(), lapsData: lapsData.slice(), videoBlobUrl: videoBlobUrl, telemetryCsvText: telemetryCsvText, telemetryDownloadName: telemetryDownloadName });
+                currentSessionIndex = sessionHistory.length - 1;
+            }
+            resetAllData();
+            showToast('info', 'New session started.');
+        }
+
+        function previousSession() {
+            if (currentSessionIndex <= 0) return;
+            currentSessionIndex--;
+            var s = sessionHistory[currentSessionIndex];
+            if (s) { loadSession(s, 'Session ' + (currentSessionIndex + 1)); showToast('info', 'Previous session restored.') }
+        }
+
+        function nextSession() {
+            if (currentSessionIndex >= sessionHistory.length - 1) return;
+            currentSessionIndex++;
+            var s = sessionHistory[currentSessionIndex];
+            if (s) { loadSession(s, 'Session ' + (currentSessionIndex + 1)); showToast('info', 'Next session restored.') }
+        }
+
         // ============ Event Wiring ============
         document.addEventListener('DOMContentLoaded', function() {
             initMap();
@@ -1180,10 +2006,40 @@
             document.getElementById('video-size-slider').addEventListener('input', function(e) {
                 currentVideoSize = parseInt(e.target.value);
                 document.querySelectorAll('.video-card').forEach(card => {
-                    card.style.width = currentVideoSize + 'px';
-                    card.style.height = Math.round(currentVideoSize * 9 / 16) + 'px';
+                    const w = currentVideoSize, h = Math.round(w * 9 / 16);
+                    card.style.width = w + 'px';
+                    card.style.height = h + 'px';
                 });
-                document.getElementById('video-section').style.height = Math.round(currentVideoSize * 9 / 16) + 60 + 'px';
+                requestAnimationFrame(() => {
+                    const s = document.getElementById('video-section');
+                    if (!s.classList.contains('hidden')) s.style.maxHeight = s.scrollHeight + 'px';
+                });
+            });
+            document.getElementById('new-session-btn').addEventListener('click', newSession);
+            document.getElementById('toggle-data-table').addEventListener('click', function() {
+                var dv = document.getElementById('data-table-view');
+                if (dv) dv.classList.toggle('hidden');
+            });
+            document.getElementById('data-table-close').addEventListener('click', function() {
+                document.getElementById('data-table-view').classList.add('hidden');
+            });
+            document.getElementById('layout-presets').addEventListener('change', function() {
+                var val = this.value, dc = document.getElementById('dashboard-content');
+                var mp = document.getElementById('map-panel'), mc = document.getElementById('charts-column'), dv = document.getElementById('data-table-view'), vs = document.getElementById('video-section');
+                var all = [mp, mc];
+                function resetAll() {
+                    all.forEach(function(e) { if (!e) return; e.classList.remove('lg:w-full', 'lg:w-1/2', 'lg:w-2/3', 'lg:w-1/3', 'lg:w-3/4', 'lg:w-1/4', 'hidden') });
+                    if (dv) dv.classList.add('hidden');
+                }
+                resetAll();
+                if (val === 'Full Analysis') { mp && mp.classList.add('lg:w-1/2'); mc && mc.classList.add('lg:w-1/2') }
+                else if (val === 'Map Focus') { mp && mp.classList.add('lg:w-2/3'); mc && mc.classList.add('lg:w-1/3') }
+                else if (val === 'Data Dive') { mp && mp.classList.add('lg:w-1/3'); mc && mc.classList.add('lg:w-2/3'); dv && dv.classList.remove('hidden') }
+                else if (val === 'Video Review') { mp && mp.classList.add('lg:w-1/2'); mc && mc.classList.add('lg:w-1/2'); if (vs) { vs.classList.remove('hidden'); requestAnimationFrame(function() { vs.style.maxHeight = vs.scrollHeight + 'px' }) } }
+                else if (val === 'Minimal') { mp && mp.classList.add('lg:w-full'); mc && mc.classList.add('hidden') }
+            });
+            document.getElementById('download-csv-btn').addEventListener('click', function() {
+                if (telemetryCsvText) { var blob = new Blob([telemetryCsvText], { type: 'text/csv' }); var a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = telemetryDownloadName || 'telemetry.csv'; document.body.appendChild(a); a.click(); document.body.removeChild(a); setTimeout(function() { URL.revokeObjectURL(a.href) }, 5000) }
             });
             document.getElementById('theme-toggle').addEventListener('click', toggleTheme);
             document.getElementById('draw-gate-btn').addEventListener('click', toggleGateDrawingMode);
@@ -1192,6 +2048,47 @@
                 sortLapsByTime = e.target.checked;
                 renderLapList();
             });
+
+            // Statistics panel toggle
+            document.getElementById('stats-toggle').addEventListener('click', function() {
+                var c = document.getElementById('stats-content');
+                var v = document.getElementById('stats-chevron');
+                if (c) { c.classList.toggle('hidden'); if (v) v.style.transform = c.classList.contains('hidden') ? '' : 'rotate(180deg)' }
+            });
+            // Bookmarks toggle
+            document.getElementById('bookmarks-toggle').addEventListener('click', function() {
+                var c = document.getElementById('bookmarks-content');
+                var v = document.getElementById('bookmarks-chevron');
+                if (c) { c.classList.toggle('hidden'); if (v) v.style.transform = c.classList.contains('hidden') ? '' : 'rotate(180deg)' }
+            });
+            // Statistics sort headers
+            document.querySelectorAll('.stats-header').forEach(function(h) {
+                h.addEventListener('click', function() {
+                    var key = this.dataset.sort;
+                    if (statsSortKey === key) statsSortAsc = !statsSortAsc;
+                    else { statsSortKey = key; statsSortAsc = key === 'delta' ? false : true }
+                    if (lapsData.length > 0) renderStatisticsPanel();
+                });
+            });
+            // Bookmark button
+            document.getElementById('add-bookmark-btn').addEventListener('click', function() { addBookmarkAtCurrentPosition() });
+            // Keyboard shortcut for bookmark (case-insensitive)
+            document.addEventListener('keydown', function(e) {
+                if ((e.key === 'b' || e.key === 'B') && !e.ctrlKey && !e.metaKey && !e.target.closest('input,textarea,select')) {
+                    e.preventDefault();
+                    addBookmarkAtCurrentPosition();
+                }
+            });
+
+            function addBookmarkAtCurrentPosition() {
+                var lapsToRender = getSelectedLaps();
+                if (lapsToRender.length === 0) return;
+                var item = lapsToRender[0];
+                var pt;
+                if (playbackState.mode === 'distance') pt = item.lap.find(function(p) { return p.lapDistance >= playbackState.currentValue }) || item.lap[item.lap.length - 1];
+                else pt = item.lap.find(function(p) { return (p.time - item.lap[0].time) >= playbackState.currentValue }) || item.lap[item.lap.length - 1];
+                if (pt) addBookmark(pt, 'Bk ' + (bookmarks.length + 1) + ' ' + formatTime(pt.time));
+            }
 
             document.getElementById('play-btn').addEventListener('click', togglePlayback);
             document.getElementById('prev-frame-btn').addEventListener('click', () => stepFrame(-0.04));
