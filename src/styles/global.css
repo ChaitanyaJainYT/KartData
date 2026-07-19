@@ -1,0 +1,137 @@
+/* ========== Base ========== */
+body { -webkit-font-smoothing: antialiased; }
+#map { height: 100%; width: 100%; z-index: 0; cursor: crosshair; }
+
+/* ========== Custom Scrollbar ========== */
+::-webkit-scrollbar { width: 6px; height: 6px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 4px; }
+::-webkit-scrollbar-thumb:hover { background: #94a3b8; }
+.dark ::-webkit-scrollbar-thumb { background: #334155; }
+.dark ::-webkit-scrollbar-thumb:hover { background: #475569; }
+
+/* ========== Custom Range Input ========== */
+input[type=range] { -webkit-appearance: none; background: transparent; }
+input[type=range]::-webkit-slider-thumb {
+    -webkit-appearance: none; height: 14px; width: 14px; border-radius: 50%;
+    background: #ef4444; cursor: pointer; margin-top: -5px;
+    box-shadow: 0 2px 4px rgba(0,0,0,0.2); transition: transform 0.1s;
+}
+input[type=range]::-webkit-slider-thumb:hover { transform: scale(1.2); }
+input[type=range]::-webkit-slider-runnable-track {
+    width: 100%; height: 4px; cursor: pointer; background: #e2e8f0; border-radius: 2px;
+}
+.dark input[type=range]::-webkit-slider-runnable-track { background: #334155; }
+
+/* ========== Custom Checkbox (Lap Selection) ========== */
+.lap-checkbox {
+    -webkit-appearance: none; appearance: none; background-color: transparent;
+    margin: 0; font: inherit; color: currentColor; width: 1.15em; height: 1.15em;
+    border: 2px solid currentColor; border-radius: 0.25em; display: grid; place-content: center;
+}
+.lap-checkbox::before {
+    content: ""; width: 0.65em; height: 0.65em; transform: scale(0);
+    transition: 120ms transform ease-in-out; box-shadow: inset 1em 1em white;
+    transform-origin: center;
+    clip-path: polygon(14% 44%, 0 65%, 50% 100%, 100% 16%, 80% 0%, 43% 62%);
+}
+.lap-checkbox:checked { background-color: #ef4444; border-color: #ef4444; }
+.lap-checkbox:checked::before { transform: scale(1); }
+
+/* ========== Utility ========== */
+.no-scrollbar::-webkit-scrollbar { display: none; }
+.no-scrollbar { -ms-overflow-style: none; scrollbar-width: none; }
+.custom-scrollbar { scrollbar-width: thin; }
+
+/* ========== Video Card ========== */
+.video-card video { width: 100%; height: 100%; object-fit: cover; border-radius: 0.5rem; background: #000; }
+.video-card .error-overlay { display: none; }
+.video-card.has-error .error-overlay { display: flex; }
+
+/* ========== Drag Overlay (phase 7) ========== */
+.drag-overlay {
+    display: none;
+    position: fixed; inset: 0; z-index: 9999;
+    background: rgba(10, 13, 20, 0.85);
+    backdrop-filter: blur(4px);
+    align-items: center; justify-content: center;
+    border: 3px dashed #ef4444;
+}
+.drag-overlay.is-active { display: flex; }
+body.drag-over .drag-overlay { display: flex; }
+
+/* ========== Resize Handles (phase 16) ========== */
+.resize-handle { flex-shrink: 0; position: relative; z-index: 10; background: transparent; transition: background 0.15s; }
+.resize-handle--vertical { width: 6px; cursor: col-resize; }
+.resize-handle--vertical:hover { background: rgba(239, 68, 68, 0.08); }
+.resize-handle--vertical .resize-handle__line {
+    position: absolute; top: 0; bottom: 0; left: 2px; width: 2px;
+    background: #2a3143; border-radius: 1px; transition: background 0.15s;
+}
+.resize-handle--vertical:hover .resize-handle__line { background: #ef4444; }
+.resize-handle--horizontal { height: 6px; cursor: row-resize; }
+.resize-handle--horizontal .resize-handle__line {
+    position: absolute; left: 0; right: 0; top: 2px; height: 2px;
+    background: #2a3143; border-radius: 1px;
+}
+.resize-handle--horizontal:hover .resize-handle__line { background: #ef4444; }
+.resize-handle.is-dragging .resize-handle__line { background: #ef4444; }
+
+/* ========== Panel Hidden (phase 16) ========== */
+.panel-hidden {
+    flex: 0 0 0 !important;
+    overflow: hidden;
+    padding: 0 !important;
+    margin: 0 !important;
+    opacity: 0;
+    pointer-events: none;
+}
+
+/* ========== Toast (phase 7) ========== */
+#toast-container {
+    position: fixed; bottom: 1rem; right: 1rem; z-index: 9999;
+    display: flex; flex-direction: column; gap: 0.5rem;
+    pointer-events: none;
+}
+.toast {
+    pointer-events: auto;
+    display: flex; align-items: center; gap: 0.75rem;
+    padding: 0.75rem 1rem;
+    border-radius: 0.75rem;
+    background: white; color: #1e293b;
+    border: 1px solid #e2e8f0;
+    box-shadow: 0 10px 30px rgba(0,0,0,0.1);
+    animation: toast-slide-in 0.3s ease-out;
+    max-width: 400px;
+}
+.dark .toast {
+    background: #1e293b; color: #f8fafc;
+    border-color: #334155;
+}
+.toast--success { border-left: 3px solid #22c55e; }
+.toast--error { border-left: 3px solid #ef4444; }
+.toast--warning { border-left: 3px solid #eab308; }
+.toast--info { border-left: 3px solid #3b82f6; }
+
+@keyframes toast-slide-in {
+    from { transform: translateX(100%); opacity: 0; }
+    to { transform: translateX(0); opacity: 1; }
+}
+@keyframes toast-slide-out {
+    from { transform: translateX(0); opacity: 1; }
+    to { transform: translateX(100%); opacity: 0; }
+}
+
+/* ========== Reduced Motion ========== */
+@media (prefers-reduced-motion: reduce) {
+    *, *::before, *::after {
+        animation-duration: 0.01ms !important;
+        transition-duration: 0.01ms !important;
+    }
+}
+
+/* ========== Focus Visible ========== */
+:focus-visible {
+    outline: 2px solid #ef4444;
+    outline-offset: 2px;
+}
