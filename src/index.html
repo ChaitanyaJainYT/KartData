@@ -47,6 +47,8 @@
 
         #app-sidebar { transition: width 0.3s ease, padding 0.3s ease; width: 320px; }
         body.sidebar-collapsed #app-sidebar { width: 0; padding: 0; overflow: hidden; }
+        #charts-column { transition: width 0.3s ease, padding 0.3s ease; }
+        body.charts-collapsed #charts-column { width: 0 !important; padding: 0; overflow: hidden; min-width: 0; }
         .lap-tower-table th { cursor: pointer; user-select: none; }
         .lap-tower-table th:hover { color: #ef4444; }
         .lap-tower-table th .sort-icon { margin-left: 2px; font-size: 8px; }
@@ -160,6 +162,10 @@
                 <i class="ph ph-sidebar text-lg"></i>
             </button>
 
+            <button id="charts-toggle-btn" class="p-2 rounded-lg text-gray-500 hover:bg-gray-800 transition-colors" title="Toggle Graphs">
+                <i class="ph ph-chart-bar text-lg"></i>
+            </button>
+
             <button id="settings-gear" class="p-2 rounded-lg text-gray-500 hover:bg-gray-800 transition-colors" title="Settings">
                 <i class="ph ph-gear text-lg"></i>
             </button>
@@ -195,21 +201,9 @@
                 </div>
             </div>
 
-            <div class="flex-shrink-0 px-3 py-2 border-b border-gray-800 flex items-center justify-between">
-                <h3 class="text-[10px] font-bold text-gray-500 uppercase tracking-wider">Smoothing</h3>
-                <div class="flex items-center gap-2">
-                    <input type="range" id="smoothing-slider" min="0" max="20" value="0" step="1" class="w-16">
-                    <span id="smoothing-value" class="font-mono font-bold text-xs w-4 text-right text-gray-400">0</span>
-                </div>
-            </div>
-
             <div class="flex-1 overflow-hidden flex flex-col">
                 <div class="flex-shrink-0 px-3 py-1.5 border-b border-gray-800 flex items-center justify-between">
                     <h3 class="text-[10px] font-bold text-gray-500 uppercase tracking-wider">Laps</h3>
-                    <label class="flex items-center gap-1 cursor-pointer text-[9px] text-gray-500 hover:text-gray-300 transition-colors">
-                        <input type="checkbox" id="sort-laps-toggle" class="w-2.5 h-2.5 accent-brand-500">
-                        Sort by Time
-                    </label>
                 </div>
                 <div class="flex-1 overflow-y-auto custom-scrollbar" id="lap-tower-scroll">
                     <table class="lap-tower-table">
@@ -255,97 +249,114 @@
 
             <!-- Dashboard -->
             <div id="dashboard-content" class="flex-1 flex flex-col overflow-hidden hidden">
-                <div class="flex-1 flex flex-col lg:flex-row overflow-hidden">
+                <!-- Map panel -->
+                <div id="map-panel" class="flex-1 flex flex-col relative bg-gray-900" style="min-height:250px">
+                    <div id="map" class="flex-1"></div>
 
-                    <!-- Map + Video column -->
-                    <div class="w-full lg:w-7/12 flex flex-col overflow-hidden border-r border-gray-800">
-                        <!-- Map panel -->
-                        <div id="map-panel" class="flex-1 flex flex-col relative bg-gray-900" style="min-height:250px">
-                            <div id="map" class="flex-1"></div>
-
-                            <!-- Map overlay buttons -->
-                            <div class="map-btn-group">
-                                <button id="btn-set-gate" class="map-btn" title="Click 2 points on map to set Start/Finish line"><i class="ph ph-flag-checkered text-xs"></i> S/F</button>
-                                <button id="btn-reset-gate" class="map-btn" title="Reset gate"><i class="ph ph-x-circle text-xs"></i> Reset</button>
-                                <button id="btn-set-s1" class="map-btn" title="Set Sector 1"><span class="color-dot" style="background:#3b82f6"></span> S1</button>
-                                <button id="btn-set-s2" class="map-btn" title="Set Sector 2"><span class="color-dot" style="background:#f97316"></span> S2</button>
-                                <button id="btn-set-s3" class="map-btn" title="Set Sector 3"><span class="color-dot" style="background:#22c55e"></span> S3</button>
-                                <button id="btn-reset-sectors" class="map-btn" title="Reset all sector lines"><i class="ph ph-arrows-counter-clockwise text-xs"></i></button>
-                            </div>
-
-                            <!-- Gate badge -->
-                            <div id="gate-badge" class="hidden fixed top-16 left-1/2 -translate-x-1/2 z-[1000] pointer-events-none">
-                                <div class="bg-red-600/90 text-white px-4 py-2 rounded-lg text-sm font-bold shadow-lg whitespace-nowrap pointer-events-auto">Gate Drawing Mode — Click to place points · Esc to cancel</div>
-                            </div>
-                        </div>
-
-                        <!-- Video section -->
-                        <div id="video-section" class="bg-gray-900 border-t border-gray-800 flex-shrink-0 hidden flex-col">
-                            <div class="bg-gray-800/80 px-3 py-1.5 flex items-center justify-between border-b border-gray-700/50 cursor-pointer hover:bg-gray-700/50 transition-colors" id="video-section-header">
-                                <h3 class="text-[10px] font-bold text-gray-400 flex items-center gap-1.5 uppercase tracking-wider">
-                                    <i class="ph-fill ph-film-strip text-brand-500 text-xs"></i> Video
-                                    <span id="video-count" class="text-gray-600 font-mono text-[10px]"></span>
-                                </h3>
-                                <div class="flex items-center gap-3">
-                                    <label class="flex items-center gap-1.5 cursor-pointer" onclick="event.stopPropagation()">
-                                        <input type="checkbox" id="extract-telemetry-toggle" class="w-3 h-3 accent-brand-500" checked>
-                                        <span class="text-[9px] font-semibold text-gray-400">Extract</span>
-                                    </label>
-                                    <i class="ph ph-monitor text-xs text-gray-500"></i>
-                                    <input type="range" id="video-size-slider" min="200" max="500" value="320" class="w-16" onclick="event.stopPropagation()">
-                                    <i class="ph ph-caret-up text-gray-600 text-sm" id="video-section-chevron"></i>
-                                </div>
-                            </div>
-                            <div class="video-grid custom-scrollbar" id="video-grid" style="height:180px">
-                                <div id="video-placeholder" class="text-gray-600 text-xs text-center w-full">Upload a video to see lap-synced playback</div>
-                            </div>
-                            <div id="video-collapsed-message" class="hidden text-[10px] text-gray-600 text-center py-1">Video section collapsed</div>
-                        </div>
+                    <!-- Map overlay buttons -->
+                    <div class="map-btn-group">
+                        <button id="btn-set-gate" class="map-btn" title="Click 2 points on map to set Start/Finish line"><i class="ph ph-flag-checkered text-xs"></i> S/F</button>
+                        <button id="btn-reset-gate" class="map-btn" title="Reset gate"><i class="ph ph-x-circle text-xs"></i> Reset</button>
+                        <button id="btn-set-s1" class="map-btn" title="Set Sector 1"><span class="color-dot" style="background:#3b82f6"></span> S1</button>
+                        <button id="btn-set-s2" class="map-btn" title="Set Sector 2"><span class="color-dot" style="background:#f97316"></span> S2</button>
+                        <button id="btn-set-s3" class="map-btn" title="Set Sector 3"><span class="color-dot" style="background:#22c55e"></span> S3</button>
+                        <button id="btn-reset-sectors" class="map-btn" title="Reset all sector lines"><i class="ph ph-arrows-counter-clockwise text-xs"></i></button>
                     </div>
 
-                    <!-- Charts column -->
-                    <div class="w-full lg:w-5/12 flex flex-col overflow-y-auto custom-scrollbar" id="charts-column">
-                        <div class="p-3 space-y-3">
-                            <div id="chart-speed-dist-container" class="chart-card">
-                                <div class="chart-card-header" data-target="chart-speed-dist">
-                                    <h3><i class="ph ph-chart-line text-xs mr-1.5 text-brand-500"></i>Speed vs Distance</h3>
-                                    <i class="ph ph-caret-up text-gray-600 text-sm"></i>
-                                </div>
-                                <div class="chart-card-body" id="chart-speed-dist"></div>
-                            </div>
-                            <div id="chart-speed-time-container" class="chart-card">
-                                <div class="chart-card-header" data-target="chart-speed-time">
-                                    <h3><i class="ph ph-clock text-xs mr-1.5 text-brand-500"></i>Speed vs Time</h3>
-                                    <i class="ph ph-caret-up text-gray-600 text-sm"></i>
-                                </div>
-                                <div class="chart-card-body" id="chart-speed-time"></div>
-                            </div>
-                            <div id="chart-speed-delta-container" class="chart-card">
-                                <div class="chart-card-header" data-target="chart-speed-delta">
-                                    <h3><i class="ph ph-arrows-left-right text-xs mr-1.5 text-brand-500"></i>Speed Delta</h3>
-                                    <i class="ph ph-caret-up text-gray-600 text-sm"></i>
-                                </div>
-                                <div class="chart-card-body" id="chart-speed-delta"></div>
-                            </div>
-                            <div id="chart-time-delta-container" class="chart-card">
-                                <div class="chart-card-header" data-target="chart-time-delta">
-                                    <h3><i class="ph ph-timer text-xs mr-1.5 text-brand-500"></i>Time Delta</h3>
-                                    <i class="ph ph-caret-up text-gray-600 text-sm"></i>
-                                </div>
-                                <div class="chart-card-body" id="chart-time-delta"></div>
-                            </div>
-                            <div id="chart-dist-delta-container" class="chart-card">
-                                <div class="chart-card-header" data-target="chart-dist-delta">
-                                    <h3><i class="ph ph-ruler text-xs mr-1.5 text-brand-500"></i>Distance Delta</h3>
-                                    <i class="ph ph-caret-up text-gray-600 text-sm"></i>
-                                </div>
-                                <div class="chart-card-body" id="chart-dist-delta"></div>
-                            </div>
+                    <!-- Gate badge -->
+                    <div id="gate-badge" class="hidden fixed top-16 left-1/2 -translate-x-1/2 z-[1000] pointer-events-none">
+                        <div class="bg-red-600/90 text-white px-4 py-2 rounded-lg text-sm font-bold shadow-lg whitespace-nowrap pointer-events-auto">Gate Drawing Mode — Click to place points · Esc to cancel</div>
+                    </div>
+                </div>
+
+                <!-- Video section -->
+                <div id="video-section" class="bg-gray-900 border-t border-gray-800 flex-shrink-0 hidden flex-col">
+                    <div class="bg-gray-800/80 px-3 py-1.5 flex items-center justify-between border-b border-gray-700/50 cursor-pointer hover:bg-gray-700/50 transition-colors" id="video-section-header">
+                        <h3 class="text-[10px] font-bold text-gray-400 flex items-center gap-1.5 uppercase tracking-wider">
+                            <i class="ph-fill ph-film-strip text-brand-500 text-xs"></i> Video
+                            <span id="video-count" class="text-gray-600 font-mono text-[10px]"></span>
+                        </h3>
+                        <div class="flex items-center gap-3">
+                            <label class="flex items-center gap-1.5 cursor-pointer" onclick="event.stopPropagation()">
+                                <input type="checkbox" id="extract-telemetry-toggle" class="w-3 h-3 accent-brand-500" checked>
+                                <span class="text-[9px] font-semibold text-gray-400">Extract</span>
+                            </label>
+                            <i class="ph ph-monitor text-xs text-gray-500"></i>
+                            <input type="range" id="video-size-slider" min="200" max="500" value="320" class="w-16" onclick="event.stopPropagation()">
+                            <i class="ph ph-caret-up text-gray-600 text-sm" id="video-section-chevron"></i>
                         </div>
                     </div>
+                    <div class="video-grid custom-scrollbar" id="video-grid" style="height:180px">
+                        <div id="video-placeholder" class="text-gray-600 text-xs text-center w-full">Upload a video to see lap-synced playback</div>
+                    </div>
+                    <div id="video-collapsed-message" class="hidden text-[10px] text-gray-600 text-center py-1">Video section collapsed</div>
                 </div>
             </div>
         </main>
+
+        <!-- Charts column (right sidebar) -->
+        <aside id="charts-column" class="w-80 lg:w-5/12 flex flex-col overflow-hidden flex-shrink-0 border-l border-gray-800 bg-gray-900 z-10">
+            <div class="flex-shrink-0 bg-gray-800/80 px-3 py-1.5 flex items-center justify-between border-b border-gray-700/50 cursor-pointer hover:bg-gray-700/50 transition-colors" id="charts-column-header">
+                <h3 class="text-[10px] font-bold text-gray-400 flex items-center gap-1.5 uppercase tracking-wider">
+                    <i class="ph ph-chart-bar text-brand-500 text-xs"></i> Graphs
+                </h3>
+                <div class="flex items-center gap-3" onclick="event.stopPropagation()">
+                    <label class="flex items-center gap-1.5 text-[9px] text-gray-500 font-semibold cursor-pointer">
+                        Smoothing
+                        <input type="range" id="smoothing-slider" min="0" max="20" value="0" step="1" class="w-14">
+                        <span id="smoothing-value" class="font-mono font-bold text-xs w-3 text-right text-gray-400">0</span>
+                    </label>
+                    <i class="ph ph-caret-up text-gray-600 text-sm" id="charts-chevron"></i>
+                </div>
+            </div>
+            <div class="flex-1 overflow-y-auto custom-scrollbar" id="charts-scroll">
+            <div class="p-3 space-y-3">
+                <div id="chart-speed-dist-container" class="chart-card">
+                    <div class="chart-card-header" data-target="chart-speed-dist">
+                        <h3><i class="ph ph-chart-line text-xs mr-1.5 text-brand-500"></i>Speed vs Distance</h3>
+                        <i class="ph ph-caret-up text-gray-600 text-sm"></i>
+                    </div>
+                    <div class="chart-card-body" id="chart-speed-dist"></div>
+                </div>
+                <div id="chart-speed-time-container" class="chart-card">
+                    <div class="chart-card-header" data-target="chart-speed-time">
+                        <h3><i class="ph ph-clock text-xs mr-1.5 text-brand-500"></i>Speed vs Time</h3>
+                        <i class="ph ph-caret-up text-gray-600 text-sm"></i>
+                    </div>
+                    <div class="chart-card-body" id="chart-speed-time"></div>
+                </div>
+                <div id="chart-speed-delta-container" class="chart-card">
+                    <div class="chart-card-header" data-target="chart-speed-delta">
+                        <h3><i class="ph ph-arrows-left-right text-xs mr-1.5 text-brand-500"></i>Speed Delta</h3>
+                        <i class="ph ph-caret-up text-gray-600 text-sm"></i>
+                    </div>
+                    <div class="chart-card-body" id="chart-speed-delta"></div>
+                </div>
+                <div id="chart-time-delta-container" class="chart-card">
+                    <div class="chart-card-header" data-target="chart-time-delta">
+                        <h3><i class="ph ph-timer text-xs mr-1.5 text-brand-500"></i>Time Delta</h3>
+                        <i class="ph ph-caret-up text-gray-600 text-sm"></i>
+                    </div>
+                    <div class="chart-card-body" id="chart-time-delta"></div>
+                </div>
+                <div id="chart-speed-delta-time-container" class="chart-card">
+                    <div class="chart-card-header" data-target="chart-speed-delta-time">
+                        <h3><i class="ph ph-clock-counter-clockwise text-xs mr-1.5 text-brand-500"></i>Speed Delta vs Time</h3>
+                        <i class="ph ph-caret-up text-gray-600 text-sm"></i>
+                    </div>
+                    <div class="chart-card-body" id="chart-speed-delta-time"></div>
+                </div>
+                <div id="chart-dist-delta-container" class="chart-card">
+                    <div class="chart-card-header" data-target="chart-dist-delta">
+                        <h3><i class="ph ph-ruler text-xs mr-1.5 text-brand-500"></i>Distance Delta</h3>
+                        <i class="ph ph-caret-up text-gray-600 text-sm"></i>
+                    </div>
+                    <div class="chart-card-body" id="chart-dist-delta"></div>
+                </div>
+            </div>
+            <div id="charts-collapsed-message" class="hidden text-[10px] text-gray-600 text-center py-2">Graphs collapsed</div>
+            </div>
+        </aside>
     </div>
 
     <!-- ==================== PLAYBACK BAR ==================== -->
@@ -410,7 +421,7 @@
     </div>
 
     <!-- Sidebar Backdrop -->
-    <div id="sidebar-backdrop" class="hidden" onclick="toggleSidebar()"></div>
+    <div id="sidebar-backdrop" class="hidden" onclick="document.body.classList.toggle('sidebar-collapsed')"></div>
 
     <!-- Settings Overlay -->
     <div id="settings-overlay" class="fixed inset-0 z-[3000] bg-black/50 backdrop-blur-sm hidden transition-opacity duration-300">
@@ -495,7 +506,7 @@
         let currentSmoothing = 0;
         let isRelayouting = false;
         let currentPositionMarker = null;
-        let sortLapsByTime = false;
+
         let lapSortKey = 'lap';
         let lapSortOrder = 'asc';
         let maxVideoCount = 4;
@@ -597,8 +608,6 @@
             el.querySelector('.toast-dismiss').addEventListener('click', function() { dismissToast(id); });
             if (options.undoAction) el.querySelector('.toast-undo').addEventListener('click', function() { options.undoAction(); dismissToast(id); });
             var dt = setTimeout(function() { dismissToast(id); }, dur);
-            el.addEventListener('mouseenter', function() { clearTimeout(dt); });
-            el.addEventListener('mouseleave', function() { dt = setTimeout(function() { dismissToast(id); }, dur); });
             visibleToasts.push({ id, type, message, el, dismissTimer: dt });
             return id;
         }
@@ -869,7 +878,7 @@
             updateScrubberScalingBoundaries(getSelectedLaps());
             setTimeout(function() {
                 if (map) { map.invalidateSize(); var b = []; for (var i = 0; i < rawData.length; i++) b.push([rawData[i].lat, rawData[i].lon]); map.fitBounds(b, { padding: [30, 30] }); }
-                var charts = ['chart-speed-dist','chart-speed-time','chart-speed-delta','chart-time-delta','chart-dist-delta'];
+                var charts = ['chart-speed-dist','chart-speed-time','chart-speed-delta','chart-speed-delta-time','chart-time-delta','chart-dist-delta'];
                 charts.forEach(function(id) { if (document.getElementById(id).data) Plotly.Plots.resize(id); });
             }, 150);
         }
@@ -909,6 +918,16 @@
             const refLap = referenceLapId >= 0 && lapsData[referenceLapId] ? lapsData[referenceLapId] : null;
             const refTime = refLap ? refLap.duration : bestTime;
 
+            // Compute global max for min/avg/max speeds
+            var bestMin = -Infinity, bestAvg = -Infinity, bestMax = -Infinity;
+            lapsData.forEach(function(l) {
+                var s = computeLapStatistics(l);
+                var mn = parseFloat(s.minSpeed), av = parseFloat(s.avgSpeed), mx = parseFloat(s.maxSpeed);
+                if (mn > bestMin) bestMin = mn;
+                if (av > bestAvg) bestAvg = av;
+                if (mx > bestMax) bestMax = mx;
+            });
+
             lapsToDisplay.forEach(({ lap, idx }) => {
                 const isChecked = selectedLapIndices.has(idx) || selectedLapIndices.has('all');
                 const isBest = lap.duration === bestTime && lapsData.length > 1;
@@ -930,17 +949,22 @@
                 var s2Best = (lap.sectors && lap.sectors[1] && Math.abs(lap.sectors[1].time - bestSectors.s2) < 0.001);
                 var s3Best = (lap.sectors && lap.sectors[2] && Math.abs(lap.sectors[2].time - bestSectors.s3) < 0.001);
 
+                var mnVal = parseFloat(stats.minSpeed), avVal = parseFloat(stats.avgSpeed), mxVal = parseFloat(stats.maxSpeed);
+                var mnBest = mnVal >= bestMin && bestMin > 0;
+                var avBest = avVal >= bestAvg && bestAvg > 0;
+                var mxBest = mxVal >= bestMax && bestMax > 0;
+
                 tr.innerHTML = `
                     <td><input type="checkbox" class="lap-enable" data-idx="${idx}" ${isChecked ? 'checked' : ''}></td>
                     <td style="font-weight:700">${isBest ? '<i class="ph-fill ph-trophy text-green-500 text-[10px]"></i> ' : ''}${idx + 1}</td>
-                    <td style="font-weight:600;color:#e2e8f0">${formatTime(lap.duration)}</td>
+                    <td style="font-weight:600;color:${isBest ? '#a855f7' : '#e2e8f0'};font-weight:${isBest ? '700' : '600'}">${formatTime(lap.duration)}</td>
                     <td class="${deltaClass}" style="font-weight:600">${deltaStr}</td>
                     <td style="color:${s1Best ? '#a855f7' : '#3b82f6'};font-weight:${s1Best ? '700' : '400'}">${s1}</td>
                     <td style="color:${s2Best ? '#a855f7' : '#f97316'};font-weight:${s2Best ? '700' : '400'}">${s2}</td>
                     <td style="color:${s3Best ? '#a855f7' : '#22c55e'};font-weight:${s3Best ? '700' : '400'}">${s3}</td>
-                    <td>${stats.minSpeed}</td>
-                    <td>${stats.avgSpeed}</td>
-                    <td style="font-weight:600">${stats.maxSpeed}</td>
+                    <td style="color:${mnBest ? '#a855f7' : 'inherit'};font-weight:${mnBest ? '700' : '400'}">${stats.minSpeed}</td>
+                    <td style="color:${avBest ? '#a855f7' : 'inherit'};font-weight:${avBest ? '700' : '400'}">${stats.avgSpeed}</td>
+                    <td style="color:${mxBest ? '#a855f7' : 'inherit'};font-weight:${mxBest ? '700' : '600'}">${stats.maxSpeed}</td>
                     <td><input type="radio" name="ref-lap" class="lap-ref" data-idx="${idx}" ${isRef ? 'checked' : ''}></td>
                 `;
                 tbody.appendChild(tr);
@@ -1277,6 +1301,38 @@
             var sdLayout = { ...layoutDelta, xaxis: { title: { text: 'Distance (m)', font: { size: 9, color: fontColor } }, gridcolor: gridColor, tickfont: { size: 9, color: fontColor } }, yaxis: { ...layoutDelta.yaxis, title: { text: 'Δ Speed (km/h)', font: { size: 9, color: fontColor } } } };
             Plotly.newPlot('chart-speed-delta', tracesSpeedDelta, sdLayout, config);
 
+            // Speed Delta vs Time
+            var tracesSpeedDeltaTime = [];
+            if (refLap) {
+                lapsToRender.forEach(function(item) {
+                    if (item.index === referenceLapId) return;
+                    var color = COLORS[item.index % COLORS.length];
+                    var lap = item.lap, lapStart = lap[0].time;
+                    var refSpeeds = refLap.map(function(d) { return d.speed; });
+                    var lapSpeeds = lap.map(function(d) { return d.speed; });
+                    var smoothedLap = smoothData(lapSpeeds, currentSmoothing);
+                    var smoothedRef = smoothData(refSpeeds, currentSmoothing);
+                    var delta = [];
+                    for (var i = 0; i < lap.length; i++) {
+                        var match = null, md = Infinity;
+                        var t = lap[i].time - lapStart;
+                        for (var j = 0; j < refLap.length; j++) {
+                            var dd = Math.abs(t - (refLap[j].time - refLap[0].time));
+                            if (dd < md) { md = dd; match = j; }
+                        }
+                        if (match !== null) delta.push(smoothedLap[i] - smoothedRef[match]);
+                        else delta.push(0);
+                    }
+                    tracesSpeedDeltaTime.push({
+                        x: lap.map(function(d) { return d.time - lapStart; }), y: delta, mode: 'lines', name: 'Lap ' + (item.index + 1),
+                        line: { width: 1.8, color: color },
+                        hovertemplate: '%{y:.1f}<extra>Lap ' + (item.index + 1) + '</extra>'
+                    });
+                });
+            }
+            tracesSpeedDeltaTime.push({ x: [], y: [], mode: 'markers', type: 'scatter', marker: { color: '#facc15', size: 10, line: { color: '#fff', width: 2 } }, hoverinfo: 'none', showlegend: false });
+            Plotly.newPlot('chart-speed-delta-time', tracesSpeedDeltaTime, { ...layoutDelta, xaxis: { title: { text: 'Time (s)', font: { size: 9, color: fontColor } }, gridcolor: gridColor, tickfont: { size: 9, color: fontColor } }, yaxis: { ...layoutDelta.yaxis, title: { text: 'Δ Speed (km/h)', font: { size: 9, color: fontColor } } } }, config);
+
             // Time Delta
             var tracesTimeDelta = [];
             if (refLap) {
@@ -1345,7 +1401,7 @@
 
         // ===================== ZOOM SYNC =====================
         function setupZoomSyncEngine() {
-            var chartIds = ['chart-speed-dist', 'chart-speed-time', 'chart-speed-delta', 'chart-time-delta', 'chart-dist-delta'];
+            var chartIds = ['chart-speed-dist', 'chart-speed-time', 'chart-speed-delta', 'chart-speed-delta-time', 'chart-time-delta', 'chart-dist-delta'];
             chartIds.forEach(function(id) {
                 var el = document.getElementById(id);
                 if (!el) return;
@@ -1361,7 +1417,7 @@
         function syncAllZoom(sourceEvent, sourceId) {
             if (!sourceEvent || !sourceEvent['xaxis.range[0]']) return;
             var x0 = sourceEvent['xaxis.range[0]'], x1 = sourceEvent['xaxis.range[1]'];
-            var chartIds = ['chart-speed-dist', 'chart-speed-time', 'chart-speed-delta', 'chart-time-delta', 'chart-dist-delta'];
+            var chartIds = ['chart-speed-dist', 'chart-speed-time', 'chart-speed-delta', 'chart-speed-delta-time', 'chart-time-delta', 'chart-dist-delta'];
             chartIds.forEach(function(id) {
                 if (id === sourceId) return;
                 Plotly.relayout(id, { 'xaxis.range[0]': x0, 'xaxis.range[1]': x1 });
@@ -1369,7 +1425,7 @@
         }
 
         function setupChartClicks() {
-            var chartIds = ['chart-speed-dist', 'chart-speed-time', 'chart-speed-delta', 'chart-time-delta', 'chart-dist-delta'];
+            var chartIds = ['chart-speed-dist', 'chart-speed-time', 'chart-speed-delta', 'chart-speed-delta-time', 'chart-time-delta', 'chart-dist-delta'];
             chartIds.forEach(function(id) {
                 var el = document.getElementById(id);
                 if (!el) return;
@@ -1510,6 +1566,7 @@
             restyleCursor('chart-speed-dist', cursorDistX, cursorY);
             restyleCursor('chart-speed-time', cursorTimeX, cursorY);
             restyleCursor('chart-speed-delta', cursorDistX, cursorY.map(function() { return 0; }));
+            restyleCursor('chart-speed-delta-time', cursorTimeX, cursorY.map(function() { return 0; }));
             restyleCursor('chart-time-delta', cursorDistX, cursorY.map(function() { return 0; }));
             restyleCursor('chart-dist-delta', cursorTimeX, cursorY.map(function() { return 0; }));
 
@@ -1788,7 +1845,10 @@
             document.getElementById('download-csv-btn').addEventListener('click', downloadTelemetryCsv);
             document.getElementById('new-session-btn').addEventListener('click', newSession);
             document.getElementById('theme-toggle').addEventListener('click', toggleTheme);
-            document.getElementById('sidebar-toggle-btn').addEventListener('click', function() { document.body.classList.toggle('sidebar-collapsed'); });
+            document.getElementById('sidebar-toggle-btn').addEventListener('click', function(event) {
+                event.stopPropagation();
+                document.body.classList.toggle('sidebar-collapsed');
+            });
 
             // Gate / Sector buttons
             document.getElementById('btn-set-gate').addEventListener('click', setGateMode);
@@ -1844,12 +1904,6 @@
                 if (lapsData.length > 0) renderCharts(getSelectedLaps());
             });
 
-            // Sort
-            document.getElementById('sort-laps-toggle').addEventListener('change', function(e) {
-                sortLapsByTime = e.target.checked;
-                renderLapTower();
-            });
-
             // Video section collapse
             var videoCollapsed = false;
             document.getElementById('video-section-header').addEventListener('click', function() {
@@ -1866,6 +1920,15 @@
                     msg.classList.add('hidden');
                     chevron.className = 'ph ph-caret-up text-gray-600 text-sm';
                 }
+            });
+
+            // Charts column collapse (header click)
+            document.getElementById('charts-column-header').addEventListener('click', function() {
+                document.body.classList.toggle('charts-collapsed');
+            });
+            document.getElementById('charts-toggle-btn').addEventListener('click', function(event) {
+                event.stopPropagation();
+                document.body.classList.toggle('charts-collapsed');
             });
 
             // Video size
