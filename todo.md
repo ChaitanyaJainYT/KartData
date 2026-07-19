@@ -1,18 +1,13 @@
 # KartData — Implementation Tracker
 
-## Current Phase: 1 (Core CSV + Map)
+## Completed Phases
 
-- [x] Empty state UI (checkered flag, upload prompt)
-- [x] CSV upload via header button and empty state button
-- [x] PapaParse integration with column auto-detection (lat, lon, speed, time)
-- [x] Haversine distance calculation
-- [x] Speed m/s → km/h conversion
-- [x] Default single lap calculation
-- [x] UI state transition (empty → dashboard with sidebar, map, playback bar)
-- [x] Leaflet map with CartoDB Dark Matter tiles
-- [x] Polyline rendering for GPS track
-- [x] Dark/light theme toggle with tile swapping
-- [x] Auto-detect OS dark mode preference
+- [x] **Phase 00** — Project scaffold, directory tree, HTML shell, all CDNs, Tailwind config, global CSS, empty module stubs
+- [x] **Phase 01** — CSV upload (PapaParse), column auto-detection, Haversine distance, Leaflet map (CartoDB tiles), dark/light theme, UI state transitions
+- [x] **Phase 02** — smoothData, Speed vs Distance / Speed vs Time Plotly charts, zoom sync engine, chart interaction profiles (click→seek, hover→map marker), smoothing slider, theme re-render, resize handler
+- [x] **Phase 03** — Gate drawing mode (toggle, ghost line, click-to-place), intersection detection, lap splitting, lap markers on map, gate reset
+- [x] **Phase 04** — Sidebar lap list with checkboxes, color dots, lap times, best-lap trophy, sort-by-time toggle, handleFilterChange selection logic
+- [x] **Phase 05** — Playback engine (play/pause, rAF loop, frame stepping), scrubber, distance/time mode switch, speed selector, chart cursor markers, map position marker, live telemetry panel
 
 ## Phase Plan References
 
@@ -20,10 +15,10 @@
 |---|---|---|
 | 00 — Project Setup | `project_plan_v3/phase_00_project_setup.md` | ✅ Done |
 | 01 — Core CSV + Map | `project_plan_v3/phase_01_core_csv_map.md` | ✅ Done |
-| 02 — Speed Charts | `project_plan_v3/phase_02_speed_charts.md` | ⬜ |
-| 03 — Gate + Lap Split | `project_plan_v3/phase_03_gate_lap_split.md` | ⬜ |
-| 04 — Sidebar + Lap Selection | `project_plan_v3/phase_04_sidebar_lap_selection.md` | ⬜ |
-| 05 — Playback Bar | `project_plan_v3/phase_05_playback_bar.md` | ⬜ |
+| 02 — Speed Charts | `project_plan_v3/phase_02_speed_charts.md` | ✅ Done |
+| 03 — Gate + Lap Split | `project_plan_v3/phase_03_gate_lap_split.md` | ✅ Done |
+| 04 — Sidebar + Lap Selection | `project_plan_v3/phase_04_sidebar_lap_selection.md` | ✅ Done |
+| 05 — Playback Bar | `project_plan_v3/phase_05_playback_bar.md` | ✅ Done |
 | 06 — Video Sync | `project_plan_v3/phase_06_video_player_sync.md` | ⬜ |
 | 07 — Toast + Drag-Drop | `project_plan_v3/phase_07_toast_drag_drop.md` | ⬜ |
 | 08 — MP4 Extraction | `project_plan_v3/phase_08_mp4_extraction.md` | ⬜ |
@@ -43,3 +38,7 @@
 |---|---|---|
 | 2026-07-19 | 00 | Project scaffold created |
 | 2026-07-19 | 01 | CSV upload + Leaflet map + theme toggle implemented |
+| 2026-07-19 | 02 | Plotly speed charts + zoom sync + smoothing + interaction profiles |
+| 2026-07-19 | 03 | Gate drawing + lap splitting + map lap markers |
+| 2026-07-19 | 04 | Sidebar lap list w/ checkboxes, sort, smoothing slider |
+| 2026-07-19 | 05 | Playback engine, scrubber, cursor sync, live telemetry |

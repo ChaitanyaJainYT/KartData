@@ -183,7 +183,7 @@
             </div>
 
             <!-- Dashboard (hidden initially) -->
-            <div id="dashboard-content" class="flex-1 flex flex-col overflow-hidden hidden h-full">
+            <div id="dashboard-content" class="flex-1 flex flex-col overflow-hidden hidden">
                 <div class="flex-1 flex flex-col lg:flex-row overflow-hidden">
                     <!-- Map column -->
                     <div class="w-full lg:w-1/2 flex flex-col border-r border-gray-200 dark:border-gray-800 relative bg-gray-200 dark:bg-gray-900">
@@ -252,8 +252,8 @@
 
         <div class="flex items-center gap-4">
             <div class="flex bg-gray-100 dark:bg-gray-800 rounded-lg p-1 flex-shrink-0 border border-gray-200 dark:border-gray-700">
-                <button id="mode-dist" class="px-4 py-1.5 text-xs font-bold rounded-md bg-white dark:bg-gray-700 text-brand-600 dark:text-brand-400 shadow-sm transition-all">Distance</button>
-                <button id="mode-time" class="px-4 py-1.5 text-xs font-bold rounded-md text-gray-500 dark:text-gray-400 hover:text-gray-800 dark:hover:text-gray-200 transition-all">Time</button>
+                <button id="mode-dist" class="px-4 py-1.5 text-xs font-bold rounded-md text-gray-500 dark:text-gray-400 hover:text-gray-800 dark:hover:text-gray-200 transition-all">Distance</button>
+                <button id="mode-time" class="px-4 py-1.5 text-xs font-bold rounded-md bg-white dark:bg-gray-700 text-brand-600 dark:text-brand-400 shadow-sm transition-all">Time</button>
             </div>
             <div class="flex items-center bg-gray-100 dark:bg-gray-800 rounded-lg border border-gray-200 dark:border-gray-700 overflow-hidden">
                 <div class="px-2 py-1.5 text-gray-400 dark:text-gray-500 bg-gray-200/50 dark:bg-gray-700/50 flex items-center border-r border-gray-200 dark:border-gray-700">
@@ -274,7 +274,7 @@
     <!-- Main scripts -->
     <script type="module" src="app.js"></script>
 
-    <!-- Phase 1: Core CSV + Map (inline for rapid development) -->
+    <!-- Phase 1-2: Core CSV + Map + Charts (inline for rapid development) -->
     <script>
         // ============ State ============
         let rawData = [];
@@ -285,11 +285,20 @@
         let map = null;
         let tileLayer = null;
         let polylineLayerGroup = null;
-
+        let currentSmoothing = 0;
+        let isRelayouting = false;
+        let currentPositionMarker = null;
+        let sortLapsByTime = false;
+        let playbackState = { isPlaying: false, mode: 'time', currentValue: 0, maxValue: 0, animFrameId: null, lastFrameTime: 0, baseSpeed: 1.0, distanceSimSpeed: 25.0 };
+        let gatePoints = [];
+        let gateLayer = null;
+        let ghostLayer = null;
+        let isDrawingGate = false;
+        let lapMarkers = {};
         const COLORS = [
-            '#ef4444', '#3b82f6', '#22c55e', '#f59e0b', '#8b5cf6',
-            '#ec4899', '#06b6d4', '#84cc16', '#f97316', '#6366f1',
-            '#14b8a6', '#e11d48', '#0ea5e9', '#a855f7', '#10b981', '#fbbf24'
+            '#3b82f6', '#ef4444', '#22c55e', '#f59e0b', '#a855f7',
+            '#06b6d4', '#ec4899', '#84cc16', '#f97316', '#6366f1',
+            '#10b981', '#f43f5e', '#8b5cf6', '#d946ef', '#14b8a6', '#eab308'
         ];
 
         // ============ Utilities ============
@@ -317,6 +326,81 @@
             return `${mins}:${String(whole).padStart(2, '0')}.${String(frac).padStart(3, '0')}`;
         }
 
+        function smoothData(data, windowSize) {
+            if (windowSize <= 0) return data.slice();
+            const result = [];
+            for (let i = 0; i < data.length; i++) {
+                const start = Math.max(0, i - windowSize);
+                const end = Math.min(data.length - 1, i + windowSize);
+                let sum = 0, count = 0;
+                for (let j = start; j <= end; j++) {
+                    sum += data[j];
+                    count++;
+                }
+                result.push(sum / count);
+            }
+            return result;
+        }
+
+        // ============ Gate Drawing ============
+        function toggleGateDrawingMode() {
+            if (rawData.length === 0) return;
+            isDrawingGate = true;
+            gatePoints = [];
+            if (gateLayer) { map.removeLayer(gateLayer); gateLayer = null; }
+            if (ghostLayer) { map.removeLayer(ghostLayer); ghostLayer = null; }
+            document.getElementById('stepText').innerHTML = '<span class="animate-pulse text-brand-500 font-bold"><i class="ph-fill ph-crosshair"></i> Click map for Gate START point</span>';
+        }
+
+        function resetGate() {
+            gatePoints = [];
+            isDrawingGate = false;
+            if (gateLayer) { map.removeLayer(gateLayer); gateLayer = null; }
+            if (ghostLayer) { map.removeLayer(ghostLayer); ghostLayer = null; }
+            document.getElementById('stepText').textContent = 'Draw a gate line across the track on the map to automatically split and calculate laps.';
+            if (rawData.length > 0) calculateDefaultSingleLap();
+        }
+
+        function intersects(a, b, c, d, p, q, r, s) {
+            let det = (c - a) * (s - q) - (r - p) * (d - b);
+            if (det === 0) return false;
+            let lambda = ((s - q) * (r - a) + (p - r) * (s - b)) / det;
+            let gamma = ((b - d) * (r - a) + (c - a) * (s - b)) / det;
+            return (0 < lambda && lambda < 1) && (0 < gamma && gamma < 1);
+        }
+
+        function calculateLapsWithGate() {
+            if (gatePoints.length < 2 || rawData.length === 0) return;
+            const gLng1 = gatePoints[0].lng, gLat1 = gatePoints[0].lat;
+            const gLng2 = gatePoints[1].lng, gLat2 = gatePoints[1].lat;
+            const processedLaps = [];
+            let lastSplitIdx = 0;
+
+            for (let i = 1; i < rawData.length; i++) {
+                const ptA = rawData[i - 1], ptB = rawData[i];
+                if (intersects(ptA.lon, ptA.lat, ptB.lon, ptB.lat, gLng1, gLat1, gLng2, gLat2)) {
+                    if (i - lastSplitIdx > 50) {
+                        processedLaps.push(rawData.slice(lastSplitIdx, i + 1));
+                        lastSplitIdx = i;
+                    }
+                }
+            }
+            if (rawData.length - lastSplitIdx > 10) processedLaps.push(rawData.slice(lastSplitIdx));
+
+            lapsData = processedLaps.map((points, idx) => {
+                if (points.length === 0) return null;
+                const baseDist = points[0].totalDistance, baseTime = points[0].time;
+                const normalized = points.map(p => ({ ...p, lap: idx + 1, lapDistance: p.totalDistance - baseDist }));
+                normalized.duration = points[points.length - 1].time - baseTime;
+                normalized.maxDistance = points[points.length - 1].totalDistance - baseDist;
+                return normalized;
+            }).filter(l => l !== null);
+
+            selectedLapIndices = new Set(['all']);
+            updateUIState();
+            updateVisualization();
+        }
+
         // ============ CSV Processing ============
         function handleFileUpload(event) {
             const file = event.target.files[0];
@@ -340,6 +424,11 @@
 
         function processIncomingCSV(data) {
             if (!data || data.length === 0) return;
+            if (gateLayer) { map.removeLayer(gateLayer); gateLayer = null; }
+            if (ghostLayer) { map.removeLayer(ghostLayer); ghostLayer = null; }
+            gatePoints = [];
+            isDrawingGate = false;
+            document.getElementById('stepText').textContent = 'Draw a gate line across the track on the map to automatically split and calculate laps.';
             const first = data[0];
             const keys = Object.keys(first);
 
@@ -354,6 +443,7 @@
             }
 
             const clean = [];
+            let startTime = null;
             let prevLat = null, prevLon = null, cumulativeDist = 0;
 
             data.forEach((row, index) => {
@@ -363,35 +453,29 @@
 
                 let speed = 0;
                 if (speedKey) {
-                    const rawSpeed = parseFloat(row[speedKey]);
-                    if (!isNaN(rawSpeed)) {
-                        speed = rawSpeed;
-                        const speedStr = String(row[speedKey]);
-                        if (!speedStr.includes('km/h') && !speedStr.includes('kph')) {
-                            speed = rawSpeed * 3.6;
-                        }
+                    const rawSpeed = parseFloat(row[speedKey] || 0);
+                    let speedVal = rawSpeed * 3.6;
+                    if (row[speedKey] && row[speedKey].toString().includes('km/h')) {
+                        speedVal = parseFloat(row[speedKey]);
                     }
+                    speed = speedVal;
                 }
 
-                let time = 0;
-                if (timeKey) {
-                    const rawTime = row[timeKey];
-                    if (typeof rawTime === 'number' && rawTime > 100000) {
-                        time = rawTime / 1000;
-                    } else if (typeof rawTime === 'string') {
-                        const parsed = Date.parse(rawTime);
-                        if (!isNaN(parsed)) {
-                            time = parsed / 1000;
-                        } else {
-                            time = parseFloat(rawTime);
-                            if (isNaN(time)) time = index * 0.1;
-                        }
+                let timestamp = 0;
+                if (row[timeKey]) {
+                    if (!isNaN(row[timeKey]) && row[timeKey] > 100000) {
+                        if (startTime === null) startTime = row[timeKey];
+                        timestamp = (row[timeKey] - startTime) / 1000;
                     } else {
-                        time = index * 0.1;
+                        const t = new Date(row[timeKey]).getTime();
+                        if (!isNaN(t)) {
+                            if (startTime === null) startTime = t;
+                            timestamp = (t - startTime) / 1000;
+                        } else {
+                            timestamp = index * 0.1;
+                        }
                     }
-                } else {
-                    time = index * 0.1;
-                }
+                } else { timestamp = index * 0.1; }
 
                 if (prevLat !== null && prevLon !== null) {
                     cumulativeDist += getDistanceFromLatLonInM(prevLat, prevLon, lat, lon);
@@ -399,15 +483,18 @@
                 prevLat = lat;
                 prevLon = lon;
 
+                let speedMS = 0;
+                if (speedKey) {
+                    speedMS = parseFloat(row[speedKey] || 0);
+                    if (row[speedKey] && row[speedKey].toString().includes('km/h')) speedMS = speedMS / 3.6;
+                }
+
                 clean.push({
-                    index,
-                    lat,
-                    lon,
-                    speed,
-                    speedMS: speedKey ? parseFloat(row[speedKey]) || 0 : 0,
-                    time,
+                    index, lat, lon, speed,
+                    speedMS,
+                    time: timestamp,
                     totalDistance: cumulativeDist,
-                    rowId: `row-${index}`
+                    rowId: index
                 });
             });
 
@@ -421,12 +508,10 @@
             if (rawData.length === 0) return;
             const first = rawData[0];
             const last = rawData[rawData.length - 1];
-            const lapData = rawData.map(p => ({ ...p, lap: 1, lapDistance: p.totalDistance }));
-            lapsData = [{
-                data: lapData,
-                duration: last.time - first.time,
-                maxDistance: last.totalDistance
-            }];
+            const loopTrace = rawData.map(p => ({ ...p, lap: 1, lapDistance: p.totalDistance }));
+            loopTrace.duration = last.time - first.time;
+            loopTrace.maxDistance = last.totalDistance;
+            lapsData = [loopTrace];
             selectedLapIndices = new Set(['all']);
             updateUIState();
             updateVisualization();
@@ -443,12 +528,16 @@
             document.getElementById('playback-bar').classList.remove('hidden');
             document.getElementById('filename-display').textContent = filename;
             document.getElementById('lap-count-display').textContent = lapsData.length + ' Lap' + (lapsData.length !== 1 ? 's' : '');
+            renderLapList();
+            updateScrubberScalingBoundaries(getSelectedLaps());
             setTimeout(() => {
                 if (map) {
                     map.invalidateSize();
                     const bounds = rawData.map(p => [p.lat, p.lon]);
                     map.fitBounds(bounds, { padding: [30, 30] });
                 }
+                if (document.getElementById('chart-speed-dist').data) Plotly.Plots.resize('chart-speed-dist');
+                if (document.getElementById('chart-speed-time').data) Plotly.Plots.resize('chart-speed-time');
             }, 150);
         }
 
@@ -469,19 +558,459 @@
 
         function renderMap(lapsToRender) {
             polylineLayerGroup.clearLayers();
-            lapsToRender.forEach((lapData, idx) => {
-                const latlngs = lapData.map(p => [p.lat, p.lon]);
-                const polyline = L.polyline(latlngs, {
-                    color: COLORS[idx % COLORS.length],
-                    weight: 4,
-                    opacity: 0.85
-                });
-                polylineLayerGroup.addLayer(polyline);
+            Object.values(lapMarkers).forEach(m => map.removeLayer(m));
+            lapMarkers = {};
+            let allLatLngs = [];
+
+            lapsToRender.forEach(item => {
+                const { lap, index } = item;
+                const color = COLORS[index % COLORS.length];
+                const latlngs = lap.map(p => [p.lat, p.lon]);
+                allLatLngs = allLatLngs.concat(latlngs);
+
+                L.polyline(latlngs, { color, weight: 4, opacity: 0.85 }).addTo(polylineLayerGroup);
+
+                const startPt = lap[0];
+                lapMarkers[index] = L.circleMarker([startPt.lat, startPt.lon], {
+                    radius: 5, color: '#fff', weight: 2, fillColor: color, fillOpacity: 1
+                }).addTo(polylineLayerGroup);
+            });
+
+            if (allLatLngs.length > 0) {
+                const firstPt = allLatLngs[0];
+                if (!currentPositionMarker) {
+                    currentPositionMarker = L.circleMarker(firstPt, {
+                        radius: 8, color: '#fff', fillColor: '#facc15', fillOpacity: 1, weight: 2
+                    }).addTo(map);
+                } else {
+                    currentPositionMarker.setLatLng(firstPt);
+                }
+            }
+        }
+
+        function handleMapMouseMove(e) {
+            if (!isDrawingGate || gatePoints.length !== 1) return;
+            if (ghostLayer) map.removeLayer(ghostLayer);
+            ghostLayer = L.polyline([gatePoints[0], e.latlng], {
+                color: '#ef4444', weight: 3, dashArray: '6,6', opacity: 0.8
+            }).addTo(map);
+        }
+
+        function handleMapClick(e) {
+            if (!isDrawingGate || rawData.length === 0) return;
+            if (gatePoints.length === 0) {
+                gatePoints.push(e.latlng);
+                document.getElementById('stepText').innerHTML = '<span class="animate-pulse text-brand-500 font-bold"><i class="ph-fill ph-crosshair"></i> Click map for Gate END point</span>';
+            } else if (gatePoints.length === 1) {
+                gatePoints.push(e.latlng);
+                isDrawingGate = false;
+                if (ghostLayer) { map.removeLayer(ghostLayer); ghostLayer = null; }
+                gateLayer = L.polyline([gatePoints[0], gatePoints[1]], {
+                    color: '#ef4444', weight: 5, opacity: 1
+                }).addTo(map);
+                document.getElementById('stepText').innerHTML = '<span class="text-green-500 font-bold"><i class="ph-fill ph-check-circle"></i> Gate Locked! Calculating splits...</span>';
+                calculateLapsWithGate();
+            }
+        }
+
+        // ============ Playback Engine ============
+        function startPlayback() {
+            if (playbackState.isPlaying) return;
+            if (playbackState.currentValue >= playbackState.maxValue) playbackState.currentValue = 0;
+            playbackState.isPlaying = true;
+            playbackState.lastFrameTime = performance.now();
+            document.querySelector('#play-btn i').className = 'ph-fill ph-pause text-2xl';
+            playbackState.animFrameId = requestAnimationFrame(playbackLoop);
+        }
+
+        function pausePlayback() {
+            playbackState.isPlaying = false;
+            if (playbackState.animFrameId != null) {
+                cancelAnimationFrame(playbackState.animFrameId);
+                playbackState.animFrameId = null;
+            }
+            document.querySelector('#play-btn i').className = 'ph-fill ph-play text-2xl ml-1';
+        }
+
+        function togglePlayback() {
+            if (playbackState.isPlaying) pausePlayback();
+            else startPlayback();
+        }
+
+        function playbackLoop(now) {
+            if (!playbackState.isPlaying) return;
+            const dt = (now - playbackState.lastFrameTime) / 1000;
+            playbackState.lastFrameTime = now;
+            if (playbackState.mode === 'time') playbackState.currentValue += dt * playbackState.baseSpeed;
+            else playbackState.currentValue += playbackState.distanceSimSpeed * playbackState.baseSpeed * dt;
+            if (playbackState.currentValue > playbackState.maxValue) playbackState.currentValue = 0;
+            document.getElementById('main-scrubber').value = playbackState.currentValue;
+            syncVideosToStateTimeline(false);
+            playbackState.animFrameId = requestAnimationFrame(playbackLoop);
+        }
+
+        function manualSeek(val) {
+            playbackState.currentValue = val;
+            syncVideosToStateTimeline(true);
+        }
+
+        function stepFrame(seconds) {
+            pausePlayback();
+            playbackState.currentValue += seconds;
+            if (playbackState.currentValue < 0) playbackState.currentValue = 0;
+            if (playbackState.currentValue > playbackState.maxValue) playbackState.currentValue = playbackState.maxValue;
+            document.getElementById('main-scrubber').value = playbackState.currentValue;
+            syncVideosToStateTimeline(true);
+        }
+
+        function setPlaybackMode(mode) {
+            playbackState.mode = mode;
+            const distBtn = document.getElementById('mode-dist');
+            const timeBtn = document.getElementById('mode-time');
+            const activeCls = 'px-4 py-1.5 text-xs font-bold rounded-md bg-white dark:bg-gray-700 text-brand-600 dark:text-brand-400 shadow-sm transition-all';
+            const inactiveCls = 'px-4 py-1.5 text-xs font-bold rounded-md text-gray-500 dark:text-gray-400 hover:text-gray-800 dark:hover:text-gray-200 transition-all';
+            if (mode === 'distance') { distBtn.className = activeCls; timeBtn.className = inactiveCls; }
+            else { timeBtn.className = activeCls; distBtn.className = inactiveCls; }
+            pausePlayback();
+            updateScrubberScalingBoundaries(getSelectedLaps());
+            playbackState.currentValue = 0;
+            document.getElementById('main-scrubber').value = 0;
+            syncVideosToStateTimeline(true);
+        }
+
+        function updateScrubberScalingBoundaries(lapsToRender) {
+            if (!lapsToRender || lapsToRender.length === 0) return;
+            let maxVal;
+            if (playbackState.mode === 'distance') {
+                maxVal = Math.max(...lapsToRender.map(l => l.lap.maxDistance));
+                document.getElementById('scrubber-total').textContent = Math.round(maxVal) + ' m';
+            } else {
+                maxVal = Math.max(...lapsToRender.map(l => l.lap.duration));
+                document.getElementById('scrubber-total').textContent = formatTime(maxVal);
+            }
+            playbackState.maxValue = maxVal;
+            const scrubber = document.getElementById('main-scrubber');
+            scrubber.max = maxVal;
+            scrubber.value = playbackState.currentValue;
+        }
+
+        function syncVideosToStateTimeline(forceSeek) {
+            const lapsToRender = getSelectedLaps();
+            if (lapsToRender.length === 0) return;
+            const cursorDistX = [], cursorTimeX = [], cursorY = [], cursorColors = [];
+            lapsToRender.forEach(item => {
+                const { lap, index } = item;
+                const lapStartTime = lap[0].time;
+                let pt;
+                if (playbackState.mode === 'distance') pt = lap.find(p => p.lapDistance >= playbackState.currentValue);
+                else pt = lap.find(p => (p.time - lapStartTime) >= playbackState.currentValue);
+                if (!pt) pt = lap[lap.length - 1];
+                cursorDistX.push(pt.lapDistance);
+                cursorTimeX.push(pt.time - lapStartTime);
+                cursorY.push(pt.speed);
+                cursorColors.push(COLORS[index % COLORS.length]);
+                if (index === 0) {
+                    if (currentPositionMarker) currentPositionMarker.setLatLng([pt.lat, pt.lon]);
+                    document.getElementById('live-speed').textContent = pt.speed.toFixed(1);
+                    document.getElementById('live-time').textContent = formatTime(pt.time);
+                    document.getElementById('live-lap').textContent = pt.lap;
+                }
+                if (lapMarkers[index]) lapMarkers[index].setLatLng([pt.lat, pt.lon]);
+            });
+            const distEl = document.getElementById('chart-speed-dist');
+            const timeEl = document.getElementById('chart-speed-time');
+            if (distEl && distEl.data && distEl.data.length > 0) {
+                const lastIdx = distEl.data.length - 1;
+                Plotly.restyle('chart-speed-dist', { x: [cursorDistX], y: [cursorY], 'marker.color': [cursorColors] }, [lastIdx]);
+            }
+            if (timeEl && timeEl.data && timeEl.data.length > 0) {
+                const lastIdx = timeEl.data.length - 1;
+                Plotly.restyle('chart-speed-time', { x: [cursorTimeX], y: [cursorY], 'marker.color': [cursorColors] }, [lastIdx]);
+            }
+            const val = playbackState.currentValue;
+            document.getElementById('scrubber-current').textContent = playbackState.mode === 'distance' ? Math.round(val) + ' m' : formatTime(val);
+        }
+
+        function updateVideoPlaybackRates() {}
+
+        // ============ Lap List ============
+        function renderLapList() {
+            const container = document.getElementById('sidebar-lap-list');
+            container.innerHTML = '';
+
+            const allItem = createFilterItem('All Laps', 'all', selectedLapIndices.has('all'), '#3b82f6', null, false);
+            container.appendChild(allItem);
+
+            const sep = document.createElement('div');
+            sep.className = 'h-px w-full bg-gray-200 dark:bg-gray-800 my-2';
+            container.appendChild(sep);
+
+            let lapsToDisplay = lapsData.map((lap, idx) => ({ lap, idx }));
+            if (sortLapsByTime) lapsToDisplay.sort((a, b) => (a.lap.duration || Infinity) - (b.lap.duration || Infinity));
+
+            const bestTime = Math.min(...lapsData.map(l => l.duration).filter(d => d > 0));
+
+            lapsToDisplay.forEach(({ lap, idx }) => {
+                const isChecked = selectedLapIndices.has(idx) || selectedLapIndices.has('all');
+                const isBest = lap.duration === bestTime && lapsData.length > 1;
+                const color = COLORS[idx % COLORS.length];
+                const item = createFilterItem(`Lap ${idx + 1}`, idx, isChecked, color, lap.duration, isBest);
+                container.appendChild(item);
             });
         }
 
-        function handleMapMouseMove(e) {}
-        function handleMapClick(e) {}
+        function createFilterItem(label, value, checked, color, duration, isBest) {
+            const wrapper = document.createElement('label');
+            wrapper.className = 'flex items-center gap-3 p-2 hover:bg-gray-100 dark:hover:bg-gray-800 rounded-xl cursor-pointer transition-colors border border-transparent hover:border-gray-200 dark:hover:border-gray-700 select-none';
+
+            const cb = document.createElement('input');
+            cb.type = 'checkbox';
+            cb.className = 'lap-checkbox focus:ring-0';
+            cb.value = value;
+            cb.checked = checked;
+
+            const dot = document.createElement('div');
+            dot.className = 'w-3 h-3 rounded-full shadow-sm flex-shrink-0';
+            dot.style.backgroundColor = color;
+
+            const labelSpan = document.createElement('span');
+            labelSpan.className = 'text-sm font-semibold text-gray-700 dark:text-gray-300 truncate';
+            labelSpan.textContent = label;
+
+            wrapper.append(cb, dot, labelSpan);
+
+            if (duration != null) {
+                const durSpan = document.createElement('span');
+                durSpan.className = 'text-xs font-mono font-bold ml-auto ' + (isBest ? 'text-green-600 dark:text-green-500' : 'text-gray-500 dark:text-gray-400');
+                if (isBest) durSpan.innerHTML = '<i class="ph-fill ph-trophy text-[10px]"></i> ' + formatTime(duration);
+                else durSpan.textContent = formatTime(duration);
+                wrapper.appendChild(durSpan);
+            }
+
+            cb.addEventListener('change', (e) => handleFilterChange(value, e.target.checked));
+            return wrapper;
+        }
+
+        function handleFilterChange(value, isChecked) {
+            const allCheckboxes = document.querySelectorAll('.lap-checkbox');
+            if (value === 'all') {
+                if (isChecked) {
+                    allCheckboxes.forEach(cb => { if (cb.value !== 'all') cb.checked = false; });
+                    selectedLapIndices = new Set(['all']);
+                } else {
+                    if (selectedLapIndices.size === 0) document.querySelector('input[value="all"]').checked = true;
+                    else selectedLapIndices.delete('all');
+                }
+            } else {
+                if (isChecked) {
+                    if (selectedLapIndices.has('all')) {
+                        selectedLapIndices.delete('all');
+                        document.querySelector('input[value="all"]').checked = false;
+                    }
+                    selectedLapIndices.add(parseInt(value));
+                } else {
+                    selectedLapIndices.delete(parseInt(value));
+                    if (selectedLapIndices.size === 0) {
+                        selectedLapIndices.add('all');
+                        document.querySelector('input[value="all"]').checked = true;
+                    }
+                }
+            }
+            updateVisualization();
+        }
+
+        // ============ Charts ============
+        function getSelectedLaps() {
+            let laps = [];
+            if (selectedLapIndices.has('all')) {
+                lapsData.forEach((lap, i) => laps.push({ lap, index: i }));
+            } else {
+                selectedLapIndices.forEach(idx => {
+                    if (lapsData[idx]) laps.push({ lap: lapsData[idx], index: idx });
+                });
+            }
+            laps.sort((a, b) => a.index - b.index);
+            return laps;
+        }
+
+        function renderCharts(lapsToRender) {
+            const fontColor = isDarkMode ? '#cbd5e1' : '#475569';
+            const gridColor = isDarkMode ? '#334155' : '#e2e8f0';
+            const axisFont = { family: 'Inter, sans-serif', size: 11, color: fontColor };
+            const config = { responsive: true, displayModeBar: false };
+
+            const layoutCommon = {
+                margin: { t: 30, r: 20, l: 40, b: 35 },
+                hovermode: 'closest', showlegend: true,
+                legend: { orientation: 'h', y: 1.15, x: 1, xanchor: 'right', font: axisFont },
+                plot_bgcolor: 'transparent', paper_bgcolor: 'transparent',
+                font: { family: 'Inter, sans-serif', color: fontColor },
+                yaxis: {
+                    title: { text: 'Speed (km/h)', font: axisFont },
+                    gridcolor: gridColor, tickfont: axisFont, fixedrange: false
+                },
+                hoverlabel: {
+                    bgcolor: isDarkMode ? '#1e293b' : '#ffffff',
+                    font: { color: isDarkMode ? '#f8fafc' : '#0f172a' },
+                    bordercolor: gridColor
+                }
+            };
+
+            const tracesDist = [], tracesTime = [];
+
+            lapsToRender.forEach(item => {
+                const { lap, index } = item;
+                const color = COLORS[index % COLORS.length];
+                const rawSpeeds = lap.map(d => d.speed);
+                const smoothedSpeeds = smoothData(rawSpeeds, currentSmoothing);
+
+                tracesDist.push({
+                    x: lap.map(d => d.lapDistance), y: smoothedSpeeds,
+                    customdata: lap.map(d => d.rowId),
+                    mode: 'lines', name: `Lap ${index + 1}`,
+                    line: { width: 2.5, color: color },
+                    hovertemplate: '<b>%{y:.1f} km/h</b><br>Dist: %{x:.1f} m<extra></extra>'
+                });
+
+                const lapStartTime = lap[0].time;
+                tracesTime.push({
+                    x: lap.map(d => d.time - lapStartTime), y: smoothedSpeeds,
+                    customdata: lap.map(d => d.rowId),
+                    mode: 'lines', name: `Lap ${index + 1}`,
+                    line: { width: 2.5, color: color },
+                    hovertemplate: '<b>%{y:.1f} km/h</b><br>Time: %{x:.2f} s<extra></extra>'
+                });
+            });
+
+            const cursorTrace = { x: [], y: [], mode: 'markers', type: 'scatter', name: 'Tracker', marker: { color: [], size: 12, line: { color: '#fff', width: 2 } }, hoverinfo: 'none', showlegend: false };
+            tracesDist.push(cursorTrace);
+            tracesTime.push(cursorTrace);
+
+            Plotly.newPlot('chart-speed-dist', tracesDist, {
+                ...layoutCommon,
+                title: { text: 'Speed vs Distance', font: { size: 14, weight: 700 }, x: 0 },
+                xaxis: { title: { text: 'Distance (m)', font: axisFont }, gridcolor: gridColor, tickfont: axisFont }
+            }, config);
+
+            Plotly.newPlot('chart-speed-time', tracesTime, {
+                ...layoutCommon,
+                title: { text: 'Speed vs Time', font: { size: 14, weight: 700 }, x: 0 },
+                xaxis: { title: { text: 'Time (s)', font: axisFont }, gridcolor: gridColor, tickfont: axisFont }
+            }, config);
+
+            setupZoomSyncEngine('chart-speed-dist', 'chart-speed-time');
+            setupInteractionProfiles('chart-speed-dist', 'chart-speed-time');
+        }
+
+        // ============ Zoom Sync Engine ============
+        function setupZoomSyncEngine(id1, id2) {
+            const el1 = document.getElementById(id1);
+            const el2 = document.getElementById(id2);
+
+            el1.on('plotly_relayout', function(eventData) {
+                if (isRelayouting) return;
+                isRelayouting = true;
+                syncZoom(eventData, id1, id2);
+                isRelayouting = false;
+            });
+
+            el2.on('plotly_relayout', function(eventData) {
+                if (isRelayouting) return;
+                isRelayouting = true;
+                syncZoom(eventData, id2, id1);
+                isRelayouting = false;
+            });
+        }
+
+        function syncZoom(sourceEvent, sourceId, targetId) {
+            if (!sourceEvent || !sourceEvent['xaxis.range[0]']) return;
+            const x0 = sourceEvent['xaxis.range[0]'];
+            const x1 = sourceEvent['xaxis.range[1]'];
+            const y0 = sourceEvent['yaxis.range[0]'];
+            const y1 = sourceEvent['yaxis.range[1]'];
+
+            const update = {};
+            if (y0 != null && y1 != null) {
+                update['yaxis.range[0]'] = y0;
+                update['yaxis.range[1]'] = y1;
+            }
+
+            const refLap = lapsData[0];
+            if (!refLap) return;
+
+            if (sourceId === 'chart-speed-dist' && x0 != null && x1 != null) {
+                const t0 = mapDistToTime(refLap, x0);
+                const t1 = mapDistToTime(refLap, x1);
+                update['xaxis.range[0]'] = Math.min(t0, t1);
+                update['xaxis.range[1]'] = Math.max(t0, t1);
+            } else if (sourceId === 'chart-speed-time' && x0 != null && x1 != null) {
+                const d0 = mapTimeToDist(refLap, x0);
+                const d1 = mapTimeToDist(refLap, x1);
+                update['xaxis.range[0]'] = Math.min(d0, d1);
+                update['xaxis.range[1]'] = Math.max(d0, d1);
+            }
+
+            Plotly.relayout(targetId, update);
+        }
+
+        function mapDistToTime(refLap, dist) {
+            const data = refLap;
+            const startTime = data[0].time;
+            if (dist <= data[0].lapDistance) return 0;
+            if (dist >= data[data.length - 1].lapDistance) return data[data.length - 1].time - startTime;
+            for (let i = 1; i < data.length; i++) {
+                if (data[i].lapDistance >= dist) {
+                    const frac = (dist - data[i - 1].lapDistance) / (data[i].lapDistance - data[i - 1].lapDistance);
+                    const t = data[i - 1].time + frac * (data[i].time - data[i - 1].time);
+                    return t - startTime;
+                }
+            }
+            return data[data.length - 1].time - startTime;
+        }
+
+        function mapTimeToDist(refLap, time) {
+            const data = refLap;
+            const startTime = data[0].time;
+            const absTime = startTime + time;
+            if (absTime <= data[0].time) return data[0].lapDistance;
+            if (absTime >= data[data.length - 1].time) return data[data.length - 1].lapDistance;
+            for (let i = 1; i < data.length; i++) {
+                if (data[i].time >= absTime) {
+                    const frac = (absTime - data[i - 1].time) / (data[i].time - data[i - 1].time);
+                    return data[i - 1].lapDistance + frac * (data[i].lapDistance - data[i - 1].lapDistance);
+                }
+            }
+            return data[data.length - 1].lapDistance;
+        }
+
+        // ============ Chart Interaction Profiles ============
+        function setupInteractionProfiles(id1, id2) {
+            const handleClick = function(eventData) {
+                if (!eventData || !eventData.points || eventData.points.length === 0) return;
+                const point = eventData.points[0];
+                if (point.customdata === undefined) return;
+                const dataPoint = rawData[point.customdata];
+                if (!dataPoint) return;
+                pausePlayback();
+                const matchedLap = lapsData[dataPoint.lap - 1];
+                if (!matchedLap) return;
+                if (playbackState.mode === 'distance') manualSeek(dataPoint.lapDistance);
+                else manualSeek(dataPoint.time - matchedLap[0].time);
+            };
+
+            const handleHover = function(eventData) {
+                if (!eventData || !eventData.points) return;
+                const point = eventData.points[0];
+                if (point.customdata === undefined) return;
+                const pt = rawData[point.customdata];
+                if (pt && currentPositionMarker) currentPositionMarker.setLatLng([pt.lat, pt.lon]);
+            };
+
+            document.getElementById(id1).on('plotly_click', handleClick);
+            document.getElementById(id2).on('plotly_click', handleClick);
+            document.getElementById(id1).on('plotly_hover', handleHover);
+            document.getElementById(id2).on('plotly_hover', handleHover);
+        }
 
         // ============ Theme ============
         function toggleTheme() {
@@ -508,10 +1037,10 @@
 
         function updateVisualization() {
             if (lapsData.length === 0) return;
-            const lapsToRender = selectedLapIndices.has('all')
-                ? lapsData.map(l => l.data)
-                : Array.from(selectedLapIndices).map(i => lapsData[i].data);
+            const lapsToRender = getSelectedLaps();
+            renderCharts(lapsToRender);
             renderMap(lapsToRender);
+            updateScrubberScalingBoundaries(lapsToRender);
         }
 
         // ============ Event Wiring ============
@@ -524,6 +1053,45 @@
 
             document.getElementById('csv-upload').addEventListener('change', handleFileUpload);
             document.getElementById('theme-toggle').addEventListener('click', toggleTheme);
+            document.getElementById('draw-gate-btn').addEventListener('click', toggleGateDrawingMode);
+            document.getElementById('clear-gate-btn').addEventListener('click', resetGate);
+            document.getElementById('sort-laps-toggle').addEventListener('change', function(e) {
+                sortLapsByTime = e.target.checked;
+                renderLapList();
+            });
+
+            document.getElementById('play-btn').addEventListener('click', togglePlayback);
+            document.getElementById('prev-frame-btn').addEventListener('click', () => stepFrame(-0.04));
+            document.getElementById('next-frame-btn').addEventListener('click', () => stepFrame(0.04));
+
+            const scrubber = document.getElementById('main-scrubber');
+            scrubber.addEventListener('input', (e) => manualSeek(parseFloat(e.target.value)));
+            scrubber.addEventListener('mousedown', () => pausePlayback());
+
+            document.getElementById('mode-dist').addEventListener('click', () => setPlaybackMode('distance'));
+            document.getElementById('mode-time').addEventListener('click', () => setPlaybackMode('time'));
+
+            document.getElementById('playback-speed').addEventListener('change', (e) => {
+                playbackState.baseSpeed = parseFloat(e.target.value);
+                updateVideoPlaybackRates();
+            });
+
+            const smoothingSlider = document.getElementById('smoothing-slider');
+            const smoothingValue = document.getElementById('smoothing-value');
+            smoothingSlider.addEventListener('input', function() {
+                currentSmoothing = parseInt(this.value);
+                smoothingValue.textContent = currentSmoothing;
+                if (lapsData.length > 0) {
+                    renderCharts(getSelectedLaps());
+                }
+            });
+
+            window.addEventListener('resize', function() {
+                if (lapsData.length > 0) {
+                    Plotly.Plots.resize('chart-speed-dist');
+                    Plotly.Plots.resize('chart-speed-time');
+                }
+            });
         });
     </script>
 </body>
