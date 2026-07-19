@@ -22,7 +22,12 @@
 - 14. Security & Permissions
 - 15. CSS Class & Behavior Registry
 - 16. CSV Schema (GX018336_demo_Telemetry.csv Matched)
-- 17. Future / Phase 2 Features (Not in v5, from earlier plans)
+- 17. UX Enhancement Backlog (Phase 1.5 — All Improvements)
+- Appendix A: Error Handling Matrix
+- Appendix B: Keyboard Shortcut Map
+- Appendix C: Plotly Configuration
+- Appendix D: VideoElement Object Structure
+- Appendix E: Playback Constants
 
 ---
 
@@ -188,6 +193,24 @@ Every element accessed via `getElementById()` (or equivalent), its type, and its
 | `extract-telemetry-toggle` | `<input type="checkbox">` | Checked = extract telemetry from video even if no CSV loaded |
 | `download-csv-btn` | `<button>` | Hidden until telemetry exists. Downloads CSV blob |
 | `theme-toggle` | `<button>` | Toggles dark/light mode. Shows moon icon in light, sun icon in dark |
+| `new-session-btn` | `<button>` | (NEW) Clears all data and returns to empty state. Shows confirmation toast. |
+| `sidebar-toggle-btn` | `<button>` | (NEW) Hamburger icon to collapse/expand sidebar. Hidden on mobile. |
+| `fullscreen-btn` | `<button>` | (NEW) On map corner. Toggles map container to fullscreen. |
+| `ab-loop-a-btn` | `<button>` | (NEW) Sets marker A at current playback position |
+| `ab-loop-b-btn` | `<button>` | (NEW) Sets marker B at current playback position |
+| `ab-loop-toggle` | `<button>` | (NEW) Enables/disables A-B loop. Active state highlighted. |
+| `toast-container` | `<div>` | (NEW) Fixed-position container for toast notifications, bottom-right |
+| `hud-overlay` | `<div>` | (NEW) Telemetry HUD overlay on the primary video player |
+| `rh-sidebar` | `<div>` | (NEW) Vertical resize handle between sidebar and main area |
+| `rh-map-charts` | `<div>` | (NEW) Vertical resize handle between map and charts column |
+| `rh-video` | `<div>` | (NEW) Horizontal resize handle between main content and video section |
+| `toggle-map-btn` | `<button>` | (NEW) Chevron `⟩` button on right edge of map panel to hide/show map |
+| `toggle-charts-btn` | `<button>` | (NEW) Chevron `⟨` button on left edge of charts column to hide/show charts |
+| `toggle-video-btn` | `<button>` | (NEW) Chevron `▽` button on top edge of video section to hide/show video |
+| `main-area` | `<div>` | (NEW) Container for map + charts + video, adjacent to sidebar |
+| `map-panel` | `<div>` | (NEW) Wrapper div around `#map` for resize handling |
+| `charts-column` | `<div>` | (NEW) Wrapper div around chart cards for resize handling |
+| `main-content-area` | `<div>` | (NEW) Container for map + charts (above video resize handle) |
 
 ### 5.2 Sidebar
 
@@ -672,6 +695,31 @@ Every event listener in the application, its trigger element, event type, handle
 | 29 | Per-video `<video>` | `loadeddata` | Check `videoWidth === 0` → add `has-error` | |
 | 30 | Per-video `<video>` | `error` | Add `has-error` class | |
 | 31 | Per-lap-checkbox (dynamic) | `change` | `handleFilterChange(value, checked)` | Created in `createFilterItem` |
+| 32 | `document` | `keydown` | Keyboard shortcut dispatcher (see Appendix E) | Single handler, checks `document.activeElement` to avoid conflicts with input fields |
+| 33 | `window` | `dragover` | `e.preventDefault(); e.dataTransfer.dropEffect = 'copy'; body.classList.add('drag-over')` | Prevent default + visual highlight |
+| 34 | `window` | `dragleave` | `body.classList.remove('drag-over')` | Remove visual highlight when drag leaves window |
+| 35 | `window` | `drop` | `handleFileDrop(e)` — extracts files from `e.dataTransfer.files`, routes CSV to `handleFileUpload` and video to `handleVideoUpload` | Prevents default, removes drag-over class |
+| 36 | `new-session-btn` | `click` | `resetAllData()` — clears all state, hides dashboard, shows empty state, revokes blob URLs | Shows confirmation toast with 5s undo option |
+| 37 | `sidebar-toggle-btn` | `click` | Toggle `sidebar-collapsed` class on body, toggle icon between hamburger and close | Animates sidebar width |
+| 38 | `fullscreen-btn` | `click` | `mapContainer.requestFullscreen()` or `exitFullscreen()` | Uses Fullscreen API |
+| 39 | `ab-loop-a-btn` | `click` | Set `playbackState.markerA = playbackState.currentValue` | Visual indicator on scrubber |
+| 40 | `ab-loop-b-btn` | `click` | Set `playbackState.markerB = playbackState.currentValue` | Visual indicator on scrubber |
+| 41 | `ab-loop-toggle` | `click` | Toggle `playbackState.loopEnabled` and `playbackState.loopMode` between `'full'` and `'ab'` | If A/B not set, default to full loop |
+| 42 | `chart-speed-dist` | `plotly_restyle` | (If legend click) update `selectedLapIndices` to match visible traces | Bidirectional sync between sidebar and chart legend |
+| 43 | `chart-speed-time` | `plotly_restyle` | Same as above | |
+| 44 | `map` | `dblclick` | If gate is set, allow repositioning nearest gate endpoint to click location | If no gate, treat as zoom (default) |
+| 45 | `map` | `contextmenu` | (Right-click) — cancel gate drawing if active, or show context menu with "Set Gate Here" option | `e.preventDefault()` |
+| 46 | `rh-sidebar`, `rh-map-charts`, `rh-video` | `mousedown` | `LayoutManager.onDragStart` | Start resize drag |
+| 47 | `rh-sidebar`, `rh-map-charts`, `rh-video` | `touchstart` | `LayoutManager.onDragStart` (passive) | Touch resize start |
+| 48 | `document` | `mousemove` | `LayoutManager.onDragMove` | During drag, update flex-basis |
+| 49 | `document` | `touchmove` | `LayoutManager.onDragMove` (passive: false) | During drag, update flex-basis |
+| 50 | `document` | `mouseup` | `LayoutManager.onDragEnd` | End drag, save layout |
+| 51 | `document` | `touchend` | `LayoutManager.onDragEnd` | End drag, save layout |
+| 52 | `toggle-map-btn` | `click` | `() => togglePanel('map-panel')` | Hide/show map |
+| 53 | `toggle-charts-btn` | `click` | `() => togglePanel('charts-column')` | Hide/show charts column |
+| 54 | `toggle-video-btn` | `click` | `() => togglePanel('video-section')` | Hide/show video section |
+| 55 | `window` | `panelresize` | `(e) => { if map: invalidateSize; if charts: Plotly.Plots.resize }` | Triggered by resize/drag or hide/show |
+| 56 | `document` | `keydown` | Handler for `M`, `C`, `V` shortcuts (map/charts/video toggle) | Part of keyboard shortcut dispatcher (Appendix B) |
 
 ---
 
@@ -704,7 +752,7 @@ Every event listener in the application, its trigger element, event type, handle
       - uploader.js    # Video upload, blob URL management, loading state
       - player.js      # Video grid rendering, playback rate sync, frame seek
     /ui
-      - layout.js      # Sidebar, panels, drag/drop layout manager (future)
+      - layout.js      # LayoutManager class: resize handles, panel hide/show, state persistence
       - theme.js       # Dark/light mode toggle
       - playback.js    # Playback bar, scrubber, play/pause, mode switch
       - lapList.js     # Lap list rendering, filter logic, sort toggle
@@ -731,22 +779,37 @@ All modules access global state via the `state.js` Pub/Sub system, not by readin
 
 ### Flow 1: Smart Data Ingestion (CSV Upload)
 
+#### Method A: Click-to-Browse
 1. User clicks "Upload CSV" button → hidden `<input type="file" accept=".csv">` triggers file picker.
 2. `change` event fires → `handleFileUpload(event)`.
-3. **Validation:** File must exist. MIME type is not explicitly checked by v5 but CSV files are expected.
-4. `FileReader` reads file as text. On completion:
+
+#### Method B: Drag-and-Drop (NEW)
+1. User drags a `.csv` or video file from file explorer over the browser window.
+2. `window dragover` → prevent default, set `dropEffect = 'copy'`, add `drag-over` class to `<body>` which shows a full-window dashed overlay with "Drop file to load telemetry" text.
+3. `window dragleave` → remove `drag-over` class.
+4. `window drop` → `handleFileDrop(e)`:
+   - Extract files from `e.dataTransfer.files`.
+   - Route `.csv` files to `handleFileUpload` logic, `video/*` files to `handleVideoUpload` logic.
+   - Show success toast: "Loaded <filename>" for CSV or "Processing <filename>..." for video.
+   - Remove `drag-over` class.
+
+#### Processing (Shared)
+3. **Validation:** File must exist. MIME type checked — reject non-CSV/non-video silently with toast: "Unsupported file type."
+4. For large CSVs (>5MB or >50k rows): show progress via PapaParse `step` callback updating a toast: "Parsing row N of M..."
+5. `FileReader.readAsText(file)` for CSV. On completion:
    - Store raw text in `telemetryCsvText` (for download).
    - Show `download-csv-btn`.
-   - `Papa.parse(file, { header: true, dynamicTyping: true, skipEmptyLines: true })`.
-5. PapaParse `complete` callback → `processIncomingCSV(data)`.
-6. Column auto-detection: Scan first row keys for lat/lon/speed/time keywords.
-7. **Row processing loop:**
+   - `Papa.parse(file, { header: true, dynamicTyping: true, skipEmptyLines: true, ... })`.
+6. PapaParse `complete` callback → `processIncomingCSV(data)`.
+7. Column auto-detection: Scan first row keys for lat/lon/speed/time keywords.
+8. **Row processing loop:**
    - Skip rows with NaN lat/lon.
    - Parse speed, auto-detect m/s→km/h conversion by checking value for "km/h" string in original.
    - Parse timestamp: ISO date, epoch ms (>100000), or fallback row-index * 0.1.
    - Compute cumulative Haversine distance.
    - Build normalized `TelemetryPoint`.
-8. `rawData` populated → `calculateDefaultSingleLap()` → `updateUIState()` → `updateVisualization()`.
+9. `rawData` populated → `calculateDefaultSingleLap()` → `updateUIState()` → `updateVisualization()`.
+10. Show success toast: "Loaded N data points across M laps."
 
 ### Flow 2: Smart Data Ingestion (Video MP4 Upload + Extraction)
 
@@ -763,19 +826,22 @@ All modules access global state via the `state.js` Pub/Sub system, not by readin
      - Reparse CSV with PapaParse → `processIncomingCSV()`.
 6. `finally`: Reset button state.
 7. If `lapsData.length > 0`: `updateVisualization()`.
-8. **Error states:**
-   - No GPMD track → alert "No GPMD track found."
-   - MP4Box unavailable → alert "MP4Box is not available in the browser."
-   - Video codec unsupported → `<video>` element triggers `error` → `has-error` overlay shown.
+8. **Error states (all use toast notification, never `alert()`):**
+   - No GPMD track → toast error: "No GPMD telemetry track found in this video. Upload a CSV instead."
+   - MP4Box unavailable → toast error: "MP4Box library failed to load. Try reloading the page."
+   - Video codec unsupported → toast warning: "Video codec not supported in this browser." + `has-error` overlay on video card.
+   - Extraction success → toast success: "Telemetry extracted: N data points."
 
 ### Flow 3: Track & Lap Initialization (Gate Drawing)
 
 1. Map renders GPS polyline from all laps (or single lap).
 2. **Gate drawing:**
-   - User clicks "Set Gate" → `toggleGateDrawingMode()` → `isDrawingGate = true`, `stepText` shows START prompt.
+   - User clicks "Set Gate" → `toggleGateDrawingMode()` → `isDrawingGate = true`, `stepText` shows START prompt + mode indicator badge appears on map: "Gate Drawing Mode — Esc to cancel".
    - User moves mouse → ghost dashed line from first point to cursor.
    - User clicks first point → `gatePoints[0]` set, `stepText` shows END prompt.
    - User clicks second point → `gatePoints[1]` set, `isDrawingGate = false`, solid red gate line drawn.
+   - **Esc key** at any time during drawing → cancel, reset to default, toast: "Gate drawing cancelled."
+   - **After gate is set:** Both endpoints have draggable handles (Leaflet `L.circleMarker` with `draggable: true`). Dragging an endpoint updates `gatePoints` and recalculates laps in real-time. Show "drag to adjust" hint on hover.
 3. **Lap detection:**
    - `calculateLapsWithGate()` iterates all adjacent GPS point pairs.
    - For each pair, test intersection with gate line using `intersects()`.
@@ -786,7 +852,7 @@ All modules access global state via the `state.js` Pub/Sub system, not by readin
    - "All Laps" checked by default → map shows all lap polylines in different colors.
 5. **Reset:** User clicks "Reset" → `resetGate()` → gate removed, single lap restored.
 
-### Flow 4: Lap Selection & Filtering
+### Flow 4: Lap Selection, Statistics & Comparison (Enhanced)
 
 1. User sees lap list in sidebar with checkboxes + color dots + lap times.
 2. **"All Laps"** checkbox at top. When checked, all individual laps unchecked.
@@ -795,41 +861,124 @@ All modules access global state via the `state.js` Pub/Sub system, not by readin
 5. **Sort by Time:** Toggle → lap list sorts ascending by duration. Fastest lap gets green trophy icon.
 6. **Filtering effect:** Only checked laps render on map, in charts, and as video monitors.
 
-### Flow 5: Analysis & Data Smoothing
+#### Lap Statistics Panel (NEW)
+- Below the lap list, show a **Statistics Panel** with a collapsible header "Lap Statistics".
+- For each lap, display in a compact table:
+  - Lap number, time, avg speed, max speed, min speed, max lateral G, distance.
+- **Best lap** row is highlighted with green accent. Delta column shows `+0.000` for best, `+1.234` for others.
+- Sortable by clicking column headers (toggle ascending/descending).
+- Data computed on-the-fly from `lapsData` (avg = total/timed points, max = Math.max of speed array, etc.).
 
+#### Reference Lap & Delta Display (NEW)
+- The fastest lap is **auto-marked as reference** (purple trace, `#b138ff` per color palette).
+- In charts: other laps show as **semi-transparent** traces with a **delta overlay** (shaded region between reference and selected lap).
+- In lap list: each non-reference lap shows delta time in red (`+1.234s`) or green (`-0.500s` — though fastest is ref so all deltas are positive).
+- User can **manually set reference lap** by right-clicking a lap in the list → "Set as Reference" context menu item.
+
+#### Sector Breakdown (NEW)
+- Each lap is auto-divided into **3 equal-distance sectors** (33%, 66%, 100% of lap distance).
+- Sector times displayed in lap list as expandable sub-rows: `S1 12.340 | S2 13.100 | S3 12.890`.
+- **Best sector** across all laps is highlighted in purple (F1-style).
+- Sector coloring on map: track polyline segments colored by sector (green/white/purple for best/neutral/worst relative to reference).
+
+### Flow 5: Analysis, Data Smoothing & Multi-Chart Views
+
+#### Core Analysis Charts (Enhanced)
 1. Smoothing slider (0-20) controls moving average window.
-2. Changing slider → `renderCharts(getSelectedLaps())` re-renders with smoothed data.
+2. Changing slider → render all charts with smoothed data. Use `Plotly.react()` instead of `Plotly.newPlot()` for performance (updates in place, no full re-render).
 3. Speed curves become progressively smoother as window increases.
-4. **Zoom-synced charts:**
-   - Zooming on Speed-vs-Distance auto-zooms Speed-vs-Time and vice versa.
-   - X-axis mapping is cross-domain: distance values mapped to time values via first lap's data.
-   - Y-axis (speed) is directly synchronized.
-   - `isRelayouting` flag prevents infinite loop.
+
+#### Additional Chart Types (NEW)
+Beyond the 2 core speed charts, add these optional charts (collapsible sections below the primary charts):
+
+4. **Altitude Chart:**
+   - Y-axis: Altitude (m), X-axis: Lap Distance (m).
+   - Shows elevation profile of each selected lap.
+   - Useful for analyzing uphill/downhill sections.
+
+5. **Lateral G Chart:**
+   - Y-axis: Lateral Acceleration (G), X-axis: Lap Distance (m).
+   - Computed from GPS path curvature and speed, or from raw ACCL/GRAV data if available.
+   - Positive = left turns, Negative = right turns.
+
+6. **Longitudinal G Chart:**
+   - Y-axis: Longitudinal Acceleration (G), X-axis: Lap Distance (m).
+   - Positive = acceleration, Negative = braking.
+   - Helps identify braking points and corner exit traction.
+
+7. **G-G Diagram (Friction Circle):**
+   - Scatter plot: X = Lateral G, Y = Longitudinal G.
+   - Each point colored by speed (warm = fast, cool = slow).
+   - Circle overlay at 1.0G radius as reference.
+   - Shows tire grip usage and driving smoothness.
+
+#### Crosshair & Interaction Improvements (NEW)
+8. **Vertical crosshair line** spanning all chart traces on mouse hover and during playback. Shows a unified tooltip with: Lap name, Speed, Distance, Time, Lat/Lon, G-forces.
+9. **Clickable legend** on each chart to toggle individual lap visibility (bidirectional sync with sidebar checkboxes).
+10. **Chart snapshot export:** Right-click chart → "Export as PNG" context menu or button in chart header. Uses `Plotly.toImage()` to download.
+
+#### Zoom Sync (Existing)
+11. Zoom-synced charts: Zooming Speed-vs-Distance auto-zooms Speed-vs-Time and vice versa.
+12. Cross-domain zoom sync extended to additional charts (altitude, G-force) using the same first-lap mapping.
+13. `isRelayouting` flag prevents infinite loop.
 
 ### Flow 6: Playback & Sync
 
 1. **Playback bar** appears at bottom after data loaded.
-2. **Mode selection:** Distance (default) or Time.
+2. **Keyboard shortcuts (global):**
+   - `Space` → toggle play/pause
+   - `←` / `→` → step frame -0.04s / +0.04s
+   - `Shift+←` / `Shift+→` → step -0.5s / +0.5s (coarse step)
+   - `Home` / `End` → seek to start / end
+   - `F` → fullscreen map
+   - `Esc` → cancel gate drawing / exit fullscreen
+   - `S` → toggle sidebar
+   - `R` → reset gate
+   - `M` → toggle mute on all videos
+   - `1`-`4` → set playback speed (1=0.25x, 2=0.5x, 3=1x, 4=2x)
+   - **All shortcuts disabled when focus is on an input/select/textarea element.**
+3. **Mode selection:** Distance (default) or Time.
    - Distance: scrubber units are meters, `distanceSimSpeed = 25 m/s` used for playback rate.
    - Time: scrubber units are seconds, video plays at `baseSpeed`.
-3. **Play/Pause:** rAF loop advances scrubber position.
+4. **Play/Pause:** rAF loop advances scrubber position.
    - Distance mode: `currentValue += distanceSimSpeed * baseSpeed * dt`
    - Time mode: `currentValue += baseSpeed * dt`
-   - At end → auto-loop to 0.
-4. **Scrubber:** Drag → `manualSeek()` → immediate sync. `mousedown` → pause.
-5. **Frame stepping:** `-0.04s` / `+0.04s` buttons for precise analysis.
-6. **Playback speed:** 0.25x to 8x.
-7. **Synchronization** (per frame):
-   - `syncVideosToStateTimeline()`:
-     - Compute `targetFileTime` for each video from current scrubber position.
-     - Seek video if drift > threshold.
-     - Update `currentPositionMarker` on map.
-     - Update lap start markers (circleMarkers).
-     - Update live telemetry panel (speed, time, lap number).
-     - Restyle chart cursor traces (colored markers at each lap's current position).
-   - `updateVideoPlaybackRates()`:
-     - In time mode: video `playbackRate = baseSpeed`.
-     - In distance mode: compute rate from `distanceSimSpeed / actualSpeedMS`, clamped.
+   - **Delta time cap:** `dt = Math.min(dt, 0.1)` to prevent massive jumps after tab switch or UI blocking.
+   - **Visibility detection:** If `document.hidden === true`, pause playback automatically. Resume when visible.
+   - At end → auto-loop to 0 (or to marker A if A-B loop enabled).
+5. **A-B Loop (NEW):**
+   - User clicks "Set A" at current scrubber position → marker A placed (visual mark on scrubber track).
+   - User clicks "Set B" → marker B placed.
+   - Click "Loop A↔B" toggle → playback loops between marker A and marker B instead of full session.
+   - `playbackState.loopMode`: `'full'` (default) or `'ab'`.
+   - When `loopMode === 'ab'` and `currentValue >= markerB`: reset to markerA.
+   - Visual indicator on scrubber rail: two vertical tick marks with "A" and "B" labels, shaded region between them.
+6. **Scrubber:** Drag → `manualSeek()` → immediate sync. `mousedown` → pause.
+7. **Frame stepping:** `-0.04s` / `+0.04s` buttons for precise analysis.
+8. **Playback speed:** 0.25x to 8x.
+9. **Video HUD Overlay (NEW):**
+   - On the primary video player, overlay a translucent telemetry dashboard showing:
+     - Speed (large, km/h)
+     - Current lap time
+     - Lateral G (bar or number)
+     - Longitudinal G (bar or number)
+     - Lap number
+   - Styled like a racing game HUD: bottom-aligned, semi-transparent black background, JetBrains Mono font, brand-red accent for speed value.
+   - Toggleable via a small button on the video card.
+10. **Synchronization** (per frame):
+    - `syncVideosToStateTimeline()`:
+      - **Performance:** Use pre-computed binary search lookup tables per lap (distance→time, time→distance) instead of linear `find()`.
+      - Compute `targetFileTime` for each video from current scrubber position using lookup tables.
+      - Seek video if drift > threshold.
+      - Update `currentPositionMarker` on map.
+      - Update lap start markers (circleMarkers).
+      - Update live telemetry panel (speed, time, lap number).
+      - Update video HUD overlay.
+      - Restyle chart cursor traces (colored markers at each lap's current position).
+      - **Crosshair line:** Restyle a vertical line trace on all charts showing current playback position.
+    - `updateVideoPlaybackRates()`:
+      - In time mode: video `playbackRate = baseSpeed`.
+      - In distance mode: compute rate from `distanceSimSpeed / actualSpeedMS`, clamped.
 
 ### Flow 7: Dark/Light Theme
 
@@ -842,13 +991,17 @@ All modules access global state via the `state.js` Pub/Sub system, not by readin
 
 ### Flow 8: Video Management
 
-1. **Video upload** → `videoBlobUrl` created.
-2. **Video cards** render in horizontal scrollable grid below charts.
-3. Each selected lap gets one video (max 4 if "All Laps" selected) with color-coded border.
-4. Videos are **muted** (no audio expected from GoPro).
-5. **Size slider** (200-800px) controls all card widths uniformly (16:9 aspect).
-6. **Error overlay:** If video codec unsupported (e.g., HEVC on some browsers), `has-error` class shows warning icon.
-7. **Clicking charts** seeks video to that point.
+1. **Video upload** → `videoBlobUrl` created. **Revoke old `videoBlobUrl`** before creating new one to prevent memory leak.
+2. **Primary video player (NEW approach):**
+   - Instead of N copies of the same video, show **one primary video player** with a color-coded border indicating which lap is currently active.
+   - Below the primary video, show **small thumbnail cards** for each selected lap (max 4) showing just the lap color dot, lap number, and current position indicator.
+   - Clicking a thumbnail card switches the primary video's sync target to that lap.
+   - This avoids the confusing UX of 4 identical videos at different positions.
+3. **Video HUD overlay** on primary player (see Flow 6 item 9): telemetry dashboard overlaid on video.
+4. **Size slider** (200-800px) controls primary player width (16:9 aspect).
+5. **Error overlay:** If video codec unsupported (e.g., HEVC on some browsers), `has-error` class shows warning icon.
+6. **Clicking charts** seeks video to that point.
+7. **Memory cleanup:** When uploading a new video or clearing session, call `URL.revokeObjectURL(videoBlobUrl)`, pause and remove all `<video>` elements.
 
 ---
 
@@ -856,39 +1009,95 @@ All modules access global state via the `state.js` Pub/Sub system, not by readin
 
 ### Layout Hierarchy
 
+#### Core Principle: All panels are resizable and hidable
+
+Every major content panel (sidebar, map, charts container, video player, individual chart cards) has:
+- A **resize handle** (draggable divider) to adjust its size relative to adjacent panels.
+- A **hide/show toggle** (button or keyboard shortcut) to collapse it entirely, with adjacent panels expanding to fill the freed space.
+
+#### Default Layout (Desktop, ≥1200px)
+
 ```
-┌──────────────────────────────────────────────────────────────┐
-│  HEADER (h-16 fixed)                                         │
-│  Logo | File Info | Upload Controls | Theme Toggle          │
-├──────────┬───────────────────────────────────────────────────┤
-│ SIDEBAR  │ MAIN (flex-1)                                     │
-│ (w-80)   │ ┌──────────────────────┬──────────────────────┐  │
-│          │ │ MAP (50%)            │ CHARTS (50%)         │  │
-│ Live     │ │                      │ ┌──────────────────┐ │  │
-│ Telemetry│ │ (Leaflet)            │ │ Speed vs Dist    │ │  │
-│          │ │                      │ ├──────────────────┤ │  │
-│ Gate     │ │                      │ │ Speed vs Time    │ │  │
-│ Config   │ │                      │ └──────────────────┘ │  │
-│          │ └──────────────────────┴──────────────────────┘  │
-│ Lap List │ ┌──────────────────────────────────────────────┐  │
-│          │ │ VIDEO SECTION (horizontal scroll, 16:9)      │  │
-│          │ └──────────────────────────────────────────────┘  │
-├──────────┴───────────────────────────────────────────────────┤
-│  PLAYBACK BAR (fixed bottom)                                 │
-│  ◀◀ ▶️ ▶▶ | ║ [=========●=========] | Distance | Time | 1x │
-└──────────────────────────────────────────────────────────────┘
+┌─────────────────────────────────────────────────────────────────────────────┐
+│ HEADER (h-14, flex-shrink-0)                                                │
+│ Logo | [☰] | File Info | Upload CSV | Add Video | [⚙] [🌙]               │
+├──────────┬──────────────────────────────────────────────────────────────────┤
+│ SIDEBAR  │ MAIN AREA (flex-1, overflow-hidden)                              │
+│ (280px)  │ ≡ resize handle (vertical, draggable)                            │
+│          │ ┌─────────────────────────┬────────────────────────────────┐     │
+│ Collaps. │ │ MAP                     │ CHARTS COLUMN                  │     │
+│          │ │ (flexible, default 55%) │ (flexible, default 45%)        │     │
+│ ┌──────┐ │ │                         │ ┌────────────────────────┐     │     │
+│ │LAPS  │ │ │ Speed heatmap,          │ │ Speed vs Distance [📷] │     │     │
+│ │ ▸    │ │ │ click-to-seek,          │ ├────────────────────────┤     │     │
+│ │ ▸    │ │ │ gate drawing            │ │ Speed vs Time [📷]     │     │     │
+│ │ ▸    │ │ │                         │ ├────────────────────────┤     │     │
+│ └──────┘ │ │ [⛶ Fullscreen]          │ │ [ + Add Chart ▾ ]     │     │     │
+│          │ └─────────────────────────┴────────────────────────────────┘     │
+│          │ ─── resize handle (horizontal, draggable) ────────────────────   │
+│          │ ┌────────────────────────────────────────────────────────────┐   │
+│          │ │ VIDEO PLAYER + HUD                    [📺 HUD] [🔊] [⛶]   │   │
+│          │ │ ┌──────────────────────────────────────────────────────┐   │   │
+│          │ │ │  ▶ Video with HUD overlay (16:9, flexible height)    │   │   │
+│          │ │ └──────────────────────────────────────────────────────┘   │   │
+│          │ │  [● Lap 1] [● Lap 2] [● Lap 3]  ← thumbnail strip     │   │   │
+│          │ └────────────────────────────────────────────────────────────┘   │   │
+├──────────┴──────────────────────────────────────────────────────────────────┤
+│ PLAYBACK BAR (h-16, flex-shrink-0)                                           │
+│ ◀◀ ▶️ ▶▶ | ║ [A========●=========B] | Dist|Time | 0.5x                    │
+│ ┌─ LIVE TELEMETRY (compact bar, always visible in playback) ────────────┐  │
+│ │ 🔴 120.5 km/h  │ ⚡ +0.35 G  │ ⏱ 01:23.456  │ 🏁 Lap 3  │ S2        │  │
+│ └────────────────────────────────────────────────────────────────────────┘  │
+└─────────────────────────────────────────────────────────────────────────────┘
 ```
+
+#### Alternative Layouts (User-Configurable)
+
+Users can combine these hide/show states to create focused workspaces:
+
+| Layout Name | Sidebar | Map | Charts | Video | Use Case |
+|---|---|---|---|---|---|
+| **Full Analysis** | ✓ | ✓ | ✓ | ✓ | Default, all panels visible |
+| **Map Focus** | ✗ | ✓ (full width) | ✗ | ✗ | Track inspection, gate drawing |
+| **Data Dive** | ✓ | ✗ | ✓ (full width) | ✗ | Lap comparison, chart analysis |
+| **Video Review** | ✓ (narrow) | ✗ | ✗ | ✓ (large) | Frame-by-frame video analysis |
+| **Minimal** | ✗ | ✓ | ✓ | ✗ | Maximum chart/map space |
+
+- Layout states persist in `localStorage` under `kartdata-layout`.
+- Keyboard shortcuts: `M` toggle map, `C` toggle charts, `V` toggle video, `S` toggle sidebar.
+
+#### Resize Handle Design
+
+Each resize handle is:
+- A **6px-wide (vertical) or 6px-tall (horizontal)** invisible hit area with a visible 2px accent line centered within it.
+- On hover: cursor changes to `col-resize` (vertical) or `row-resize` (horizontal), accent line glows brighter.
+- On drag: `mousedown` on handle → track `mousemove` → compute delta → adjust flex proportions → `ResizeObserver` triggers Plotly/Leaflet redraws.
+- On release (`mouseup`): save proportion to `localStorage`.
+- Minimum panel sizes enforced: sidebar 160px, map 300px, chart column 300px, video height 120px.
+
+#### Hide/Show Toggle Design
+
+Each panel has a small toggle button (chevron icon) at the edge of its resize handle or in its title bar:
+- **Sidebar:** Hamburger in header (existing) + chevron on right edge of sidebar.
+- **Map:** Chevron `⟩` button on the right edge of the map panel (collapses map, charts expand).
+- **Charts:** Chevron `⟨` button on the left edge of the chart column.
+- **Video:** Chevron `▽` button on the top edge of the video section or in its title bar.
+- **Individual charts:** Chevron `▾` in each chart header to collapse that chart type.
+
+When a panel is hidden, its toggle button remains visible (floating at the edge) so the user can restore it.
 
 ### Panel States
 
-| Panel | Empty State | Data Loaded State | Notes |
-|---|---|---|---|
-| Header | Logo only | + file-info, lap-count | |
-| Main | Empty state (checkered flag + upload prompt) | Map + Charts + Video | Empty state hidden, dashboard shown |
-| Sidebar ("app-sidebar") | Hidden | Visible | Only toggleable via data load, not user |
-| Playback bar | Hidden | Visible | |
-| Lap list | — | Populated with checkboxes | |
-| Video section | Hidden | Visible (if video uploaded) | |
+| Panel | Empty State | Data Loaded State | Resizable | Hidable | Notes |
+|---|---|---|---|---|---|---|
+| Header | Logo only | + file-info, lap-count, new-session-btn, sidebar-toggle | No | No | Fixed height h-14 |
+| Sidebar | Hidden | Visible (default), collapsible | Yes (width, 160-480px) | Yes (via `S` key or hamburger) | Draggable handle on right edge. Slide-out overlay on mobile. |
+| Map | N/A | Visible (default), collapsible | Yes (width, min 300px) | Yes (via `M` key or chevron `⟩` button) | Resize handle on right edge shared with charts column |
+| Charts column | N/A | Visible (default), collapsible | Yes (width, min 300px) | Yes (via `C` key or chevron `⟨` button) | Resize handle on left edge shared with map |
+| Individual chart cards | N/A | Speed-vs-Dist + Speed-vs-Time shown. Others hidden by default. | Yes (vertical height within stack) | Yes (chevron `▾` in chart header) | "+ Add Chart ▾" dropdown to swap visible types |
+| Video section | Hidden | Visible (if video uploaded), collapsible | Yes (height, min 120px) | Yes (via `V` key or chevron `▽` button) | Resize handle on top edge. Height adjusts with content. |
+| Playback bar | Hidden | Visible | No | No | Fixed height h-16 |
+| Live telemetry | N/A | Embedded in playback bar during playback | No | No | Compact horizontal layout |
 
 ### Button States
 
@@ -909,7 +1118,14 @@ Every interactive element must implement these states:
 | All buttons | `transition-all` | 150-200ms |
 | Theme toggle | `transition-colors duration-200` | 200ms |
 | Map tile swap | Immediate (no transition) | — |
-| Video cards resize | Instant (no transition) | — |
+| Video resize | Instant (no transition) | — |
+| Sidebar collapse/expand | `transition-all duration-300` | 300ms ease-in-out |
+| Panel hide/show (all) | `transition-all duration-250` | 250ms |
+| Resize handle hover glow | `transition-opacity` | 100ms |
+| Resize drag (panel flex) | None (instant) | — |
+| Toast slide-in | `animate-slide-in` (translateX from 100% to 0) | 300ms |
+| Drag-over overlay | `transition-opacity` | 200ms |
+| Modal/Settings drawer | `transition-transform` | 300ms |
 
 ---
 
@@ -977,40 +1193,67 @@ fontFamily: {
 ### 13.2 Map
 - Height: 100% of parent flex container.
 - Cursor: `crosshair` (always, not only during gate drawing).
-- Zoom control: bottom-right only. No other controls.
+- Zoom control: bottom-right only. **New: fullscreen button** added next to zoom control.
+- **Click-to-seek (NEW):** Clicking anywhere on the track polyline seeks playback to the nearest GPS point on that lap. Uses `manualSeek()` with the corresponding lapDistance or time of the nearest point. Visual feedback: brief pulse animation on clicked location.
+- **Speed heatmap (NEW):** Track polyline colored by speed using a gradient: slow (red `#ef4444`) → medium (yellow `#eab308`) → fast (green `#22c55e`). Optionally toggleable via a small button on the map.
+- **Gate endpoint handles (NEW):** After gate is set, both endpoints are `L.circleMarker` with `draggable: true`. Dragging recalculates laps in real-time.
+- **Gate drawing mode indicator (NEW):** When `isDrawingGate === true`, a badge appears at the top of the map: "Gate Drawing Mode — Click to place points · Esc to cancel".
 - Tile layer: CartoDB Dark Matter (dark) / OSM Standard (light).
 - Track polylines: weight 4, opacity 0.85.
 - Lap start markers: circle markers, radius 5, white border, color fill.
 - Current position marker: circle marker, radius 8, white border, yellow fill, `drop-shadow-md` class.
+- **GPS coordinates display (NEW):** Small overlay at bottom-left of map showing cursor lat/lon. Updates on mousemove.
 
 ### 13.3 Charts (Plotly)
-- Both charts have `responsive: true`, `displayModeBar: false`.
+- **4 chart types** (expandable/collapsible sections):
+  1. Speed vs Distance (default visible)
+  2. Speed vs Time (default visible)
+  3. Altitude vs Distance (collapsible, hidden by default)
+  4. Lateral G / Longitudinal G vs Distance (collapsible, hidden by default)
+  5. G-G Diagram (collapsible, hidden by default)
+- All charts have `responsive: true`, `displayModeBar: false`.
 - Chart background: transparent.
-- Y-axis: Speed (km/h), `fixedrange: false` (zoomable).
-- X-axis: Distance (m) or Time (s).
-- Hovermode: `'closest'`.
-- Legend: horizontal, top.
+- Y-axis titles vary per chart type (Speed km/h, Altitude m, G-Force G). All have `fixedrange: false` (zoomable).
+- X-axis shared: Distance (m) for all distance-based charts for unified zoom sync.
+- Hovermode: `'x unified'` for all synchronized charts (crosshair + tooltip with all traces' values at that x).
+- **Vertical crosshair line** on hover and during playback using a shape or scatter trace.
+- Legend: horizontal, top. **Clickable legend toggles trace visibility** (bidirectional sync with sidebar lap checkboxes via `plotly_restyle` event).
 - Cursor traces: last trace in each chart (markers only), restyled during playback.
-- **No plotly.js mode bar** visible (no pan, zoom, download buttons).
+- **Chart snapshot export:** Small camera icon button in each chart header → downloads PNG via `Plotly.toImage()`.
+- **No plotly.js mode bar** visible (no pan, zoom, download buttons — all controlled via custom UI).
 
-### 13.4 Video Cards
+### 13.4 Video Player (Refactored)
+- **Single primary video player** (not N copies).
 - Aspect ratio: 16:9 (width × 9/16 = height).
 - Width controlled by `video-size-slider` (200-800px).
-- Color-coded border (2px) matching lap color.
+- Color-coded border (2px) matching the **currently selected lap's color**.
 - Black background (`bg-black`).
 - Rounded corners (`rounded-xl`).
+- **Video HUD Overlay:** Bottom-aligned semi-transparent overlay showing:
+  - Speed (large, km/h, JetBrains Mono, brand-red)
+  - Current lap time (mm:ss.ms)
+  - Lateral G / Longitudinal G (small bars or text)
+  - Current lap number
+  - Toggle visibility via small "HUD" button on video card.
+- **Thumbnail cards below primary video:** One small card per selected lap (max 4 if "All Laps" and >4). Each shows: color dot, lap number, current position indicator (time/distance). Click to **switch primary video sync to that lap**.
 - Error overlay: if video fails (codec unsupported), shows warning icon + "Playback Error" + "Check codec support."
-- Lap label: top-left, black/80 backdrop, white text, color dot, "Lap N".
-- Horizontal scrolling container for overflow.
-- **Max 4 videos shown** when "All Laps" selected and >4 laps exist. Alert message shown.
+- Horizontal scrolling container for thumbnail overflow.
+- **Revoke old `videoBlobUrl`** on new upload or session clear.
 
-### 13.5 Sidebar Lap List
+### 13.5 Sidebar & Lap List
+- Width: 320px (`w-80`). **Collapsible** via hamburger `sidebar-toggle-btn` in header. When collapsed: width animates to 0, content hidden, map/charts expand to fill space.
+- On mobile (<768px): sidebar becomes a **slide-out overlay** triggered by hamburger icon. Overlay has semi-transparent backdrop. Close via tap on backdrop or Esc key.
 - Scrollable with custom scrollbar.
-- Each item: checkbox + color dot + label + duration.
+- Each lap item: checkbox + color dot + label + duration.
 - Hover: light background + border.
+- **Right-click context menu on lap item:** "Set as Reference", "Hide Others", "Export Lap Data".
 - "All Laps" at top, separator below.
 - If `sortLapsByTime`: sorted ascending by duration.
 - Best lap (minimum duration): green text with trophy icon.
+- **Statistics Panel** (collapsible, below lap list):
+  - Table with columns: Lap #, Time, Avg Speed, Max Speed, Min Speed, Max LatG, Distance, Delta to Best.
+  - Click column header to sort.
+  - Best lap row highlighted green.
 
 ### 13.6 Playback Bar
 - Fixed at bottom (within flow, not `position: fixed` — it's part of the flex column).
@@ -1031,10 +1274,18 @@ fontFamily: {
 
 ### 13.8 Responsiveness (Mobile < 768px)
 - Layout collapses from side-by-side to stacked.
-- **Header:** "Precision Telemetry Suite" subtitle hidden (`hidden md:block`).
-- **Main area:** Flex column instead of row. Map on top, charts below.
-- **Sidebar:** Could become a toggleable overlay or tab (current v5 does NOT fully implement mobile — the sidebar is always visible on the left). **TODO:** Implement hamburger menu or tabbed interface for mobile.
-- **Video section:** Still horizontal scroll but cards smaller.
+- **Header:** "Precision Telemetry Suite" subtitle hidden (`hidden md:block`). Hamburger menu icon visible for sidebar toggle.
+- **Main area:** Flex column instead of row. Map takes full width, charts stack vertically below.
+- **Sidebar:** Slide-out drawer overlay with semi-transparent backdrop. Triggered by hamburger icon in header. Closed by: tap on backdrop, Esc key, or close button in sidebar header. Width: 85vw (max 320px). Contains all sidebar content including statistics panel.
+- **Playback bar:** Simplified for mobile. Hide frame-step buttons. Make scrubber taller (easier to touch). Reduce spacing. Mode buttons shown as icons only.
+- **Video section:** Primary player takes full width. Thumbnail cards scroll horizontally above or below.
+- **Charts:** Stacked vertically (each full width). Collapsible headers to reduce vertical space consumption.
+- **Touch gestures (NEW):**
+  - Swipe left/right on scrubber → seek forward/backward.
+  - Double-tap on map → zoom in.
+  - Two-finger pinch on charts → zoom (Plotly built-in support).
+  - Tap on video → toggle HUD overlay visibility.
+- **Minimal viable mobile layout** ensures all controls are accessible without microscopic targeting. Buttons minimum 44x44px touch target.
 
 ### 13.9 Custom Scrollbar
 ```css
@@ -1061,7 +1312,309 @@ input[type=range]::-webkit-slider-runnable-track {
 .dark input[type=range]::-webkit-slider-runnable-track { background: #334155; }
 ```
 
-### 13.11 Custom Checkbox (Lap Selection)
+### 13.12 Toast Notification System (NEW)
+- **Container:** Fixed position, bottom-right corner, `z-50`.
+- **Toast types:** `success` (green `#22c55e` left border), `error` (red `#ef4444`), `warning` (yellow `#eab308`), `info` (blue `#3b82f6`).
+- **Structure per toast:**
+  ```html
+  <div class="toast toast-{type} flex items-center gap-3 px-4 py-3 rounded-xl bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 shadow-lg mb-2 animate-slide-in" role="alert">
+      <i class="ph-fill ph-{icon} text-{type-color} text-lg"></i>
+      <span class="text-sm font-medium text-gray-800 dark:text-gray-200">{message}</span>
+      <button class="toast-dismiss ml-2 text-gray-400 hover:text-gray-600">×</button>
+  </div>
+  ```
+- **Auto-dismiss:** After 4 seconds (success/info) or 8 seconds (error/warning). Never dismiss if user is hovering.
+- **Edge case:** Rapid toasts → queue. Show latest, hide oldest (max 3 visible).
+- **Replace all `alert()` calls** with toast notifications (see updated Appendix A).
+- **Undo action support:** Certain toasts include an "Undo" button (e.g., "Gate reset" → toast with Undo button that calls `restoreGate()`).
+
+### 13.13 Accessibility Standards (NEW)
+- **ARIA labels:** Every icon-only button must have `aria-label`:
+  - Theme toggle: `aria-label="Toggle dark mode"`
+  - Play/Pause: `aria-label={isPlaying ? 'Pause' : 'Play'}`
+  - Frame step: `aria-label="Step backward 0.04s"` / `aria-label="Step forward 0.04s"`
+  - Mode toggle: `aria-label="Distance mode"` / `aria-label="Time mode"`
+  - Gate buttons: `aria-label="Draw gate line"` / `aria-label="Reset gate"`
+  - Sidebar toggle: `aria-label="Toggle sidebar"`
+  - Fullscreen: `aria-label="Toggle fullscreen"`
+- **Focus indicators:** All interactive elements have visible `:focus-visible` outline (2px solid brand-red offset 2px).
+- **Live regions:** `aria-live="polite"` on `stepText` and toast container for screen reader announcements.
+- **Color contrast:** All text meets WCAG AA (4.5:1) contrast ratio against its background. Verify with tooling.
+- **Keyboard navigable:** All interactive elements reachable via Tab. Tab order follows visual layout (header → sidebar → main → playback bar).
+- **Reduced motion:** Respect `prefers-reduced-motion: reduce`. Disable animations (scale, pulse, transitions).
+
+### 13.14 Settings Panel (NEW)
+- Triggered by gear icon `⚙` in header.
+- Slide-out drawer (similar to mobile sidebar) or modal overlay.
+- **Settings:**
+  - Default playback speed (dropdown: 0.25x–8x)
+  - Default mode (Distance / Time)
+  - Default smoothing window (slider 0–20)
+  - Map tile preference (Dark / Light / Satellite)
+  - Line thickness for charts (slider 1–5)
+  - Show/hide individual chart types on startup
+  - Video HUD always on (toggle)
+  - Auto-loop (toggle, default on)
+- **Persistence:** Store settings in `localStorage` under key `kartdata-settings`. Load on boot.
+- **Not persisted:** Session data, files, laps — only preferences.
+
+### 13.16 Layout Manager — Resizable & Hidable Panels (NEW)
+
+All major panels implement a uniform resize/hide system. This section specifies the exact behavior.
+
+#### Resize Handle Implementation
+
+Each resize handle is a DOM element with the following structure:
+```html
+<div class="resize-handle resize-handle--{orientation}" data-panels="{before},{after}" aria-hidden="true">
+    <div class="resize-handle__line"></div>
+</div>
+```
+
+**CSS:**
+```css
+.resize-handle {
+    flex-shrink: 0;
+    position: relative;
+    z-index: 10;
+    transition: background 0.15s;
+}
+.resize-handle--vertical {
+    width: 6px; cursor: col-resize;
+    background: transparent;
+}
+.resize-handle--vertical:hover,
+.resize-handle--vertical.is-dragging {
+    background: rgba(239, 68, 68, 0.08); /* brand-red at 8% */
+}
+.resize-handle--vertical .resize-handle__line {
+    position: absolute; top: 0; bottom: 0; left: 2px; width: 2px;
+    background: #2a3143; /* border-subtle */
+    border-radius: 1px; transition: background 0.15s;
+}
+.resize-handle--vertical:hover .resize-handle__line,
+.resize-handle--vertical.is-dragging .resize-handle__line {
+    background: #ef4444; /* brand-red */
+}
+/* Horizontal variant (video resize) */
+.resize-handle--horizontal {
+    height: 6px; cursor: row-resize;
+    background: transparent;
+}
+.resize-handle--horizontal .resize-handle__line {
+    position: absolute; left: 0; right: 0; top: 2px; height: 2px;
+    background: #2a3143; border-radius: 1px;
+}
+.resize-handle--horizontal:hover .resize-handle__line,
+.resize-handle--horizontal.is-dragging .resize-handle__line {
+    background: #ef4444;
+}
+```
+
+**JavaScript behavior (`LayoutManager` class):**
+
+```js
+class LayoutManager {
+    constructor() {
+        this.handles = document.querySelectorAll('.resize-handle');
+        this.activeHandle = null;
+        this.startPos = null;
+        this.startSizes = null;
+        this.init();
+    }
+    init() {
+        this.handles.forEach(handle => {
+            handle.addEventListener('mousedown', (e) => this.onDragStart(e, handle));
+            // Touch support
+            handle.addEventListener('touchstart', (e) => this.onDragStart(e, handle), { passive: true });
+        });
+        document.addEventListener('mousemove', (e) => this.onDragMove(e));
+        document.addEventListener('mouseup', (e) => this.onDragEnd(e));
+        document.addEventListener('touchmove', (e) => this.onDragMove(e), { passive: false });
+        document.addEventListener('touchend', (e) => this.onDragEnd(e));
+    }
+    onDragStart(e, handle) {
+        e.preventDefault();
+        this.activeHandle = handle;
+        handle.classList.add('is-dragging');
+        document.body.style.cursor = handle.dataset.orientation === 'vertical' ? 'col-resize' : 'row-resize';
+        document.body.style.userSelect = 'none';
+        const pos = e.type === 'touchstart' ? e.touches[0] : e;
+        this.startPos = { x: pos.clientX, y: pos.clientY };
+        // Read current sizes of both affected panels
+        const [beforeId, afterId] = handle.dataset.panels.split(',');
+        const before = document.getElementById(beforeId);
+        const after = document.getElementById(afterId);
+        const isVert = handle.dataset.orientation === 'vertical';
+        this.startSizes = {
+            before: isVert ? before.offsetWidth : before.offsetHeight,
+            after: isVert ? after.offsetWidth : after.offsetHeight,
+            total: (isVert ? before.offsetWidth : before.offsetHeight) +
+                   (isVert ? after.offsetWidth : after.offsetHeight) +
+                   handle.offsetWidth
+        };
+    }
+    onDragMove(e) {
+        if (!this.activeHandle) return;
+        e.preventDefault();
+        const pos = e.type === 'touchmove' ? e.touches[0] : e;
+        const delta = this.activeHandle.dataset.orientation === 'vertical'
+            ? pos.clientX - this.startPos.x : pos.clientY - this.startPos.y;
+        const [beforeId, afterId] = this.activeHandle.dataset.panels.split(',');
+        const before = document.getElementById(beforeId);
+        const after = document.getElementById(afterId);
+        const minPanel = 160; // minimum px for sidebar, 300 for map/charts
+        let newBefore = Math.max(minPanel, Math.min(this.startSizes.total - minPanel, this.startSizes.before + delta));
+        let newAfter = this.startSizes.total - newBefore - this.activeHandle.offsetWidth;
+        // If both panels have the same min, prefer keeping before >= min
+        if (newAfter < minPanel) { newAfter = minPanel; newBefore = this.startSizes.total - newAfter - this.activeHandle.offsetWidth; }
+        // Apply as flex-basis
+        before.style.flexBasis = newBefore + 'px';
+        after.style.flex = '1 1 0';
+        // Trigger redraws
+        window.dispatchEvent(new CustomEvent('panelresize', { detail: { panel: beforeId } }));
+        window.dispatchEvent(new CustomEvent('panelresize', { detail: { panel: afterId } }));
+    }
+    onDragEnd() {
+        if (!this.activeHandle) return;
+        this.activeHandle.classList.remove('is-dragging');
+        document.body.style.cursor = '';
+        document.body.style.userSelect = '';
+        // Save layout to localStorage
+        this.saveLayout();
+        this.activeHandle = null;
+    }
+    saveLayout() {
+        const layout = {};
+        document.querySelectorAll('.resize-handle').forEach(h => {
+            const [beforeId] = h.dataset.panels.split(',');
+            const el = document.getElementById(beforeId);
+            if (el) layout[beforeId] = el.style.flexBasis || el.offsetWidth + 'px';
+        });
+        localStorage.setItem('kartdata-layout', JSON.stringify(layout));
+    }
+    restoreLayout() {
+        const saved = localStorage.getItem('kartdata-layout');
+        if (!saved) return;
+        try {
+            const layout = JSON.parse(saved);
+            Object.entries(layout).forEach(([id, size]) => {
+                const el = document.getElementById(id);
+                if (el) el.style.flexBasis = size;
+            });
+        } catch(e) { /* ignore corrupt layout */ }
+    }
+}
+```
+
+#### Resize Handle Placements
+
+| Handle ID | Orientation | Panels (before, after) | Min Before | Min After |
+|---|---|---|---|---|
+| `rh-sidebar` | vertical | `app-sidebar`, `main-area` | 160px | 480px |
+| `rh-map-charts` | vertical | `map-panel`, `charts-column` | 300px | 300px |
+| `rh-video` | horizontal | `main-content-area`, `video-section` | 200px (main) | 120px |
+
+#### Hide/Show Toggle Implementation
+
+Each hidable panel has a `data-panel` attribute and follows this pattern:
+
+```js
+function togglePanel(panelId, show) {
+    const panel = document.getElementById(panelId);
+    const isCurrentlyVisible = !panel.classList.contains('panel-hidden');
+    const willShow = show !== undefined ? show : !isCurrentlyVisible;
+    
+    if (willShow) {
+        panel.classList.remove('panel-hidden');
+        panel.querySelector('.panel-toggle-icon')?.classList.remove('is-hidden');
+    } else {
+        panel.classList.add('panel-hidden');
+        panel.querySelector('.panel-toggle-icon')?.classList.add('is-hidden');
+    }
+    // Dispatch resize event for Plotly/Leaflet
+    window.dispatchEvent(new CustomEvent('panelresize', { detail: { panel: panelId } }));
+    // Save state
+    const hiddenState = JSON.parse(localStorage.getItem('kartdata-hidden') || '{}');
+    hiddenState[panelId] = !willShow;
+    localStorage.setItem('kartdata-hidden', JSON.stringify(hiddenState));
+}
+```
+
+**CSS for hidden state:**
+```css
+.panel-hidden {
+    flex: 0 0 0 !important;
+    overflow: hidden;
+    padding: 0 !important;
+    margin: 0 !important;
+    opacity: 0;
+    pointer-events: none;
+}
+/* The toggle button for a hidden panel floats at the edge */
+.panel-toggle-icon.is-hidden {
+    /* Floats at the edge of the parent, rotation flipped */
+    transform: rotate(180deg);
+}
+```
+
+#### Panel Hide/Show Triggers
+
+| Panel | Toggle Trigger | Shortcut | Default State |
+|---|---|---|---|
+| Sidebar | Hamburger in header + chevron on right edge | `S` | Visible |
+| Map | Chevron `⟩` on right edge of map panel | `M` | Visible |
+| Charts column | Chevron `⟨` on left edge of charts column | `C` | Visible |
+| Video section | Chevron `▽` on top edge of video section | `V` | Visible when video loaded |
+| Individual chart cards | Chevron `▾` in chart card header | — | Speed-vs-Dist + Speed-vs-Time visible, others hidden |
+
+#### Resize Observer Integration
+
+When a panel is resized or shown/hidden, the following must happen:
+1. Dispatch `panelresize` custom event.
+2. Listeners on `map-panel` → `map.invalidateSize()`.
+3. Listeners on `charts-column` → `Plotly.Plots.resize()` for all visible chart divs.
+4. Listeners on `video-section` → no action needed (video fills container naturally).
+
+```js
+window.addEventListener('panelresize', (e) => {
+    const panel = e.detail.panel;
+    if (panel === 'map-panel' || panel === 'main-area') {
+        setTimeout(() => map?.invalidateSize(), 50);
+    }
+    if (panel === 'charts-column' || panel === 'main-area') {
+        setTimeout(() => {
+            document.querySelectorAll('[id^="chart-"]').forEach(el => {
+                if (el.data) Plotly.Plots.resize(el);
+            });
+        }, 50);
+    }
+});
+```
+
+#### State Persistence
+
+- **Layout sizes** stored in `localStorage['kartdata-layout']` as `{ panelId: "300px", ... }`.
+- **Hidden states** stored in `localStorage['kartdata-hidden']` as `{ panelId: true, ... }`.
+- Restored on `DOMContentLoaded` after `initMap()` and before first `updateVisualization()`.
+- Cleared on "New Session" button.
+
+### 13.15 Bookmark / Marker System (NEW)
+- User can place **bookmarks** at interesting points during playback or analysis.
+- **How to set:**
+  - Click bookmark icon on sidebar or press `B` key → place marker at current playback position.
+  - Right-click on chart → "Add Bookmark Here".
+- **Bookmark data:**
+  ```js
+  { id: string, name: string, time: float, distance: float, lapIndex: number, note: string }
+  ```
+- **Display:**
+  - Triangle or pin markers on all chart x-axes at bookmark positions.
+  - Pin markers on map at bookmark lat/lon.
+  - List in sidebar under "Bookmarks" collapsible section.
+  - Click bookmark → seek to that position.
+- **Export:** Bookmarks included in "Export Report" as timestamped notes.
+- **Max 50 bookmarks** per session. User notified via toast when approaching limit.
 ```css
 .lap-checkbox {
     -webkit-appearance: none; appearance: none; background-color: transparent;
@@ -1120,6 +1673,16 @@ All custom CSS classes in the `<style>` block, their selectors, and behaviors.
 | `.video-card video` | `width: 100%; height: 100%; object-fit: cover; border-radius: 0.5rem; background: #000` | Video fill card |
 | `.video-card .error-overlay` | `display: none` | Hidden by default |
 | `.video-card.has-error .error-overlay` | `display: flex` | Shown on error |
+| `.resize-handle` | `flex-shrink: 0; position: relative; z-index: 10` | Base resize handle |
+| `.resize-handle--vertical` | `width: 6px; cursor: col-resize; background: transparent` | Vertical divider |
+| `.resize-handle--vertical:hover` | `background: rgba(239,68,68,0.08)` | Hover highlight |
+| `.resize-handle__line` | `position: absolute; background: #2a3143; border-radius: 1px` | Visible accent line |
+| `.resize-handle--vertical .resize-handle__line` | `top:0; bottom:0; left:2px; width:2px` | Center line within handle |
+| `.resize-handle--vertical:hover .resize-handle__line` | `background: #ef4444` | Red line on hover |
+| `.resize-handle--horizontal` | `height: 6px; cursor: row-resize` | Horizontal divider |
+| `.resize-handle--horizontal .resize-handle__line` | `left:0; right:0; top:2px; height:2px` | Center line |
+| `.resize-handle.is-dragging` | Inherits hover styles | Active drag state |
+| `.panel-hidden` | `flex: 0 0 0 !important; overflow:hidden; opacity:0; pointer-events:none` | Hidden panel state |
 
 ---
 
@@ -1165,68 +1728,175 @@ When extracting from MP4 or exporting, the CSV must have exactly these 27 column
 
 ---
 
-## 17. Future / Phase 2 Features (Not in v5, from Earlier Plans)
+## 17. UX Enhancement Backlog (Phase 1.5 — All Improvements)
 
-These are features mentioned in project_plan.md / project_plan_v2.md but not yet implemented in v5. They should be noted for future development.
+All UX improvements identified during analysis of v5, catalogued with implementation priority and cross-reference to plan sections.
 
-| Feature | Plan Reference | Description | Priority |
-|---|---|---|---|
-| **G-G Friction Circle** | plan v1 §4, v2 §4 | `charts` module: Plotly scatter plot of Lateral G vs Longitudinal G showing tire friction ellipse | Medium |
-| **Slip Chart (Time Delta)** | plan v1 §5 Flow 3, v2 §5 Flow 3 | Dynamic time delta between reference lap and comparison lap, plotted against distance | Medium |
-| **Reference Lap Selection** | plan v1 §5, v2 §3 SessionState | User marks one lap as `isReference`. Comparisons show delta to this lap. | High |
-| **Sector Splitting** | plan v1 §3 Lap.sectors | Split laps into 3+ sectors, display sector times in timing tower | Medium |
-| **Drag/Drop Layout Manager** | plan v1 §4 ui/, v1 §6, v2 §6 | Panels (map, charts, video, sidebar) must be resizable, movable, show/hide-able via drag handles | Low |
-| **Mobile Tabbed Interface** | plan v1 §6, v2 §6 | At <768px, sidebar collapsible into hamburger; main area uses tabs: Video \| Map \| Charts | Low |
-| **Progress Bar for Extraction** | plan v1 §5 Flow 1 | When extracting telemetry from video, show progress bar (not just spinner) to indicate completion percentage | Low |
-| **Auto-Download CSV After Extraction** | plan v1 §5 Flow 1 step 6 | After MP4 extraction completes, automatically trigger CSV download | Low |
-| **Heatmap Overlay on Map** | plan v1 §4 mapping/ | Speed heatmap or G-force heatmap overlay on track map | Low |
-| **H.265/HEVC Codec Note** | plan v1 §2 | Explicitly document HEVC requirements and fallback behavior | Info |
+### Priority Legend
+- **P0 (Critical):** Must-have before initial release — fixes broken UX or adds essential interaction
+- **P1 (High):** Significant usability improvement, high-impact / low-effort
+- **P2 (Medium):** Important but not blocking
+- **P3 (Low):** Nice-to-have, polish
+
+### 17.1 Data Input & Feedback
+
+| # | Improvement | Priority | Effort | Plan Ref | Implementation Notes |
+|---|---|---|---|---|---|
+| 1 | **Drag-and-drop file upload** | P1 | Medium | Flow 1 | Full-window drop zone with visual overlay. Route CSV/video to existing handlers. |
+| 2 | **Upload progress indicator** | P1 | Low | Flow 1 | PapaParse `step` callback for CSV row count. MP4Box chunk tracking for video. Show as toast progress bar. |
+| 3 | **Toast notification system** | P0 | Medium | §13.12 | Replace all `alert()`, `console.warn` user-facing messages. 4 types, auto-dismiss, queue. |
+| 4 | **Clear session / new session button** | P1 | Low | §5 | Reset all state, revoke blob URLs, return to empty state. Confirmation toast with undo. |
+| 5 | **File size validation** | P2 | Low | Flow 1 | Warn via toast if CSV >50MB or video >4GB before attempting parse. |
+
+### 17.2 Navigation & Interaction
+
+| # | Improvement | Priority | Effort | Plan Ref | Implementation Notes |
+|---|---|---|---|---|---|
+| 6 | **Keyboard shortcuts** | P1 | Low | Flow 6, Appendix E | Space/arrows/Home/End/F/S/R/Esc/M/1-4. Single `keydown` dispatcher. Disabled when input focused. |
+| 7 | **Sidebar collapse toggle** | P1 | Low | §13.5 | Hamburger icon in header. Animated width 320px→0. Map/charts expand to fill. Persist preference in localStorage. |
+| 8 | **Click map to seek** | P1 | Low | §13.2 | Find nearest GPS point on track to clicked location. Seek to that position. Brief pulse animation. |
+| 9 | **Draggable gate endpoints** | P2 | Medium | Flow 3 | After gate set, both endpoints have Leaflet draggable handles. Drag recalculates laps in real-time. |
+| 10 | **Fullscreen mode (map)** | P2 | Low | §13.2 | Fullscreen API button on map corner. `F` key shortcut. |
+| 11 | **Right-click context menus** | P3 | Medium | Flow 4, §13.5 | Lap list: "Set as Reference", "Hide Others", "Export Lap Data". Charts: "Export as PNG", "Add Bookmark Here". |
+
+### 17.3 Lap Analysis & Data Visualization
+
+| # | Improvement | Priority | Effort | Plan Ref | Implementation Notes |
+|---|---|---|---|---|---|
+| 12 | **Per-lap statistics panel** | P1 | Medium | Flow 4, §13.5 | Table: time, avg/max/min speed, max lat-G, distance, delta. Sortable columns. Below lap list. |
+| 13 | **Reference lap + delta display** | P0 | Medium | Flow 4, §17 | Auto-mark fastest lap. Delta column in lap list. Delta shaded region in charts. Purple reference trace. |
+| 14 | **Sector breakdown (3 sectors)** | P2 | Medium | Flow 4 | Equal-distance sectors. Times in expandable sub-rows. Best sector highlighted purple. |
+| 15 | **Altitude chart** | P2 | Medium | Flow 5 | Plotly chart: altitude vs distance. Collapsible section below primary charts. |
+| 16 | **Lateral G / Longitudinal G charts** | P2 | Medium | Flow 5 | Computed from GPS path + speed. Collapsible sections. |
+| 17 | **G-G Diagram (Friction Circle)** | P2 | Medium | Flow 5 | Scatter: Lateral G vs Longitudinal G, color-coded by speed. Circle overlay at 1.0G. |
+| 18 | **Data table / raw telemetry view** | P3 | High | — | Sortable, scrollable table of all telemetry points. Motec-style spreadsheet view. Toggleable via tab or button. |
+
+### 17.4 Chart Improvements
+
+| # | Improvement | Priority | Effort | Plan Ref | Implementation Notes |
+|---|---|---|---|---|---|
+| 19 | **Vertical crosshair across all charts** | P1 | Medium | Flow 5, §13.3 | Unified hover tooltip across all charts. Shows all trace values at cursor x-position. |
+| 20 | **Clickable chart legend** | P1 | Low | Flow 5 | Toggle individual lap visibility by clicking legend item. Bidirectional sync with sidebar. |
+| 21 | **Chart PNG export** | P2 | Low | Flow 5, §13.3 | Camera icon button in each chart header. Uses `Plotly.toImage()`. |
+| 22 | **Use Plotly.react() instead of newPlot()** | P2 | Low | — | Reuse existing plot div instead of destroy/create on each update. Better performance with large datasets. |
+| 23 | **ResizeObserver instead of window.resize** | P2 | Low | — | Watch chart container divs for size changes. Trigger `Plotly.Plots.resize()` on observed changes. |
+
+### 17.5 Video Playback
+
+| # | Improvement | Priority | Effort | Plan Ref | Implementation Notes |
+|---|---|---|---|---|---|
+| 24 | **Single primary video player** | P1 | Medium | Flow 8, §13.4 | Replace N copies of same video with one player + thumbnail card strip. Less confusing, better performance. |
+| 25 | **Video HUD overlay** | P2 | Medium | Flow 6, §13.4 | Speed, lap time, G-forces, lap number overlaid on video. Racing dash style. Toggleable. |
+| 26 | **Video sync offset control** | P2 | Low | Flow 6 | Slider/buttons for `videoOffsetMs` adjustment. ±10ms increments. Show current offset. |
+| 27 | **A-B loop for repeated section analysis** | P2 | Medium | Flow 6 | Set A/B markers on scrubber. Loop between them. Visual shaded region on scrubber rail. |
+| 28 | **Blob URL memory management** | P0 | Low | Flow 8 | Revoke old `videoBlobUrl` before creating new one. Clean up on session clear. |
+| 29 | **Delta-time cap in playback loop** | P0 | Low | Flow 6 | `dt = Math.min(dt, 0.1)` to prevent massive jumps after tab switch. |
+
+### 17.6 Map
+
+| # | Improvement | Priority | Effort | Plan Ref | Implementation Notes |
+|---|---|---|---|---|---|
+| 30 | **Speed heatmap on track polyline** | P1 | Medium | §13.2 | Color-code track segments by speed. Red→Yellow→Green gradient. Toggleable. |
+| 31 | **Sector coloring on track** | P2 | Medium | Flow 4, §13.2 | Different color per sector (green/white/purple relative to reference). |
+| 32 | **GPS coordinate display** | P2 | Low | §13.2 | Small overlay, map bottom-left. Shows cursor lat/lon on mousemove. |
+| 33 | **Gate drawing mode badge** | P1 | Low | §13.2 | Badge on map: "Gate Drawing Mode — Click to place points · Esc to cancel". |
+
+### 17.7 Mobile & Responsive
+
+| # | Improvement | Priority | Effort | Plan Ref | Implementation Notes |
+|---|---|---|---|---|---|
+| 34 | **Mobile sidebar as slide-out drawer** | P2 | Medium | §13.8 | Semi-transparent backdrop, 85vw width (max 320px). Hamburger trigger. |
+| 35 | **Touch gestures** | P3 | High | §13.8 | Swipe on scrubber, double-tap map zoom, pinch chart zoom. |
+| 36 | **PWA / offline support** | P3 | High | — | manifest.json + service worker for paddock use (unreliable internet). |
+| 37 | **Minimum 44x44px touch targets** | P2 | Low | §13.8 | Ensure all interactive elements meet mobile touch target guidelines. |
+
+### 17.8 Accessibility & Polish
+
+| # | Improvement | Priority | Effort | Plan Ref | Implementation Notes |
+|---|---|---|---|---|---|
+| 38 | **ARIA labels on all icon buttons** | P2 | Low | §13.13 | Descriptive labels for screen readers. |
+| 39 | **Visible focus indicators** | P2 | Low | §13.13 | `:focus-visible` outline on all interactive elements. |
+| 40 | **Settings/preferences panel** | P2 | Medium | §13.14 | Gear icon → drawer. Default speed, mode, smoothing, map tiles. Persist in localStorage. |
+| 41 | **Bookmark / marker system** | P3 | High | §13.15 | `B` key or button to place markers. Display on charts, map, sidebar list. Exportable. |
+| 42 | **Respect prefers-reduced-motion** | P3 | Low | §13.13 | Disable animations if user preference set. |
+| 43 | **Session report export** | P3 | High | — | Generate HTML/PDF summary with lap times, best lap, chart screenshots, bookmarks. |
+| 44 | **Replace `find()` linear scan with binary search** | P2 | Low | Flow 6 | Pre-build distance→time lookup table per lap. O(log n) seek instead of O(n). |
+
+### 17.9 Cross-Cutting Technical Improvements
+
+| # | Improvement | Priority | Effort | Plan Ref | Implementation Notes |
+|---|---|---|---|---|---|
+| 45 | **URL state persistence** | P3 | High | — | Store session data in IndexedDB. Restore on page reload. Optional: "Resume last session" prompt. |
+| 46 | **Module splitting (ES6 modules)** | P2 | Medium | §8 | Split monolithic script into modular files. Use `type="module"`. |
+| 47 | **Pub/Sub state manager** | P2 | Medium | §8 | Replace global variable reads with getter/setter + subscription pattern for reactive UI updates. |
 
 ---
 
 ## Appendix A: Error Handling Matrix
 
-| Scenario | Error Type | User Feedback | Recovery |
+All user-facing feedback uses **toast notifications**. No `alert()` calls.
+
+| Scenario | Error Type | Toast Feedback | Recovery |
 |---|---|---|---|
-| CSV upload with no GPS columns | Silent | No visible change (rawData not set) | User re-uploads correct CSV |
-| CSV upload with all NaN GPS | Silent | No visible change | User re-uploads correct CSV |
-| PapaParse parse error | `console.warn` | None (partial data used) | User checks CSV format |
-| MP4Box not loaded | `alert()` | "MP4Box is not available in the browser." | User reloads page or uses CSV-only |
-| No GPMD track in video | `alert()` | "No GPMD track found." | User uploads CSV manually |
-| GPMD extraction fails | `alert()` | "Telemetry extraction failed." | User checks video source |
-| Video codec unsupported | Console | Red error overlay on video card | User uses browser with HEVC support |
-| Empty file upload | Guard return | No change | User picks valid file |
-| FileReader error | `alert()` | "Unable to read CSV file." | User re-uploads |
-| Chart with 0 laps | Plotly warning | Empty chart | Lap selection corrected |
+| CSV upload with no GPS columns | Warning | "No GPS data found in CSV. Check column names." | User re-uploads correct CSV |
+| CSV upload with all NaN GPS | Warning | "All GPS values are invalid." | User re-uploads correct CSV |
+| PapaParse parse error | Warning | "CSV parsed with N errors. Some data may be incomplete." (partial data used) | User checks CSV format |
+| MP4Box not loaded | Error | "MP4Box library failed to load. Please reload the page." | User reloads or uses CSV-only |
+| No GPMD track in video | Error | "No GPMD telemetry track found in this video. Upload a CSV instead." | User uploads CSV manually |
+| GPMD extraction fails | Error | "Telemetry extraction failed. The video may not contain GoPro telemetry data." | User checks video source |
+| Extraction success | Success | "Telemetry extracted: N data points." | — |
+| Video codec unsupported | Warning | "Video codec not supported in this browser." + error overlay on video card | User uses browser with HEVC support |
+| Empty file upload | Info | (no toast — silently ignored) | User picks valid file |
+| File too large (>50MB CSV / >4GB video) | Warning | "File is very large. Processing may be slow." | User splits file |
+| FileReader error | Error | "Unable to read file. It may be corrupted." | User re-uploads |
+| Chart with 0 laps | Info | "No laps selected for display." | Lap selection corrected |
+| Gate drawing cancelled (Esc) | Info | "Gate drawing cancelled." | — |
+| Gate reset | Info | "Gate reset. Reverted to single lap." + **[Undo]** button in toast | Click Undo to restore |
+| Session cleared | Info | "Session cleared." + **[Undo]** button in toast | Click Undo to restore |
+| Bookmark limit reached (50) | Warning | "Maximum 50 bookmarks reached. Remove existing bookmarks to add more." | User deletes bookmarks |
+| Video upload while CSV being processed | Warning | "Please wait for current processing to complete." | — |
 
-## Appendix B: VideoElement Object Structure
+## Appendix B: Keyboard Shortcut Map
 
+| Key | Context | Action | Notes |
+|---|---|---|---|
+| `Space` | Global | Toggle play/pause | Prevent default (page scroll) |
+| `←` | Global | Step frame backward 0.04s | |
+| `→` | Global | Step frame forward 0.04s | |
+| `Shift+←` | Global | Step backward 0.5s (coarse) | |
+| `Shift+→` | Global | Step forward 0.5s (coarse) | |
+| `Home` | Global | Seek to start (position 0) | |
+| `End` | Global | Seek to end (maxValue) | |
+| `F` | Global | Toggle map fullscreen | |
+| `S` | Global | Toggle sidebar hide/show | |
+| `M` | Global | Toggle map panel hide/show | |
+| `Shift+M` | Global | Toggle mute on all videos | |
+| `C` | Global | Toggle charts column hide/show | |
+| `V` | Global | Toggle video section hide/show | |
+| `R` | Global | Reset gate (with confirmation toast + Undo) | |
+| `Esc` | Global | Cancel gate drawing / exit fullscreen / close sidebar overlay (mobile) / close settings drawer / restore hidden panel if all hidden | Priority order |
+| `B` | Global | Place bookmark at current position | |
+| `1` | Global | Set playback speed to 0.25x | |
+| `2` | Global | Set playback speed to 0.5x | |
+| `3` | Global | Set playback speed to 1.0x | |
+| `4` | Global | Set playback speed to 2.0x | |
+| `D` | Global | Switch to Distance mode | |
+| `T` | Global | Switch to Time mode | |
+| `Tab` | Global | Move focus to next interactive element | Visible focus indicator required |
+| `Shift+Tab` | Global | Move focus to previous interactive element | |
+
+**Implementation:** Single `document.addEventListener('keydown', handler)`. At top of handler:
 ```js
-{
-    lapIndex: number,       // Index into lapsData
-    element: HTMLVideoElement,  // The <video> DOM node
-    lapData: Lap,           // Reference to lapsData[lapIndex]
-    lastIndex: number       // Last looked-up index for binary-search optimization (currently linear scan)
-}
+const activeTag = document.activeElement?.tagName || '';
+if (['INPUT', 'SELECT', 'TEXTAREA', 'BUTTON'].includes(activeTag)) return;
 ```
+This prevents shortcuts from firing when user is typing in a field or focused on a control.
 
-## Appendix C: Playback Constants
+**Accessibility:** All keyboard shortcuts are discoverable. Show a "Keyboard Shortcuts" tooltip or modal via `?` key or help icon in header (P3).
 
-| Constant | Value | Notes |
-|---|---|---|
-| `distanceSimSpeed` | `25.0` m/s | ≈ 90 km/h. Used in distance mode to advance scrubber. Hardcoded. |
-| `baseSpeed` | `1.0` — selectable: 0.25, 0.5, 1.0, 2.0, 4.0, 8.0 | Multiplier for playback speed |
-| `stepFrame delta` | `0.04` seconds | ≈ 25 fps interval |
-| `frameSeek threshold (dist)` | `0.15` seconds | If video drift > 0.15s in distance mode, force seek |
-| `frameSeek threshold (time)` | `0.35` seconds | If video drift > 0.35s in time mode, force seek |
-| `minLapSplitGap` | `50` points | Minimum points between gate crossings to form a lap |
-| `minTrailingLapSize` | `10` points | Minimum points for final trailing lap |
-| `videoSizeMin/Max` | `200` / `800` pixels | Video card width range |
-| `smoothingWindowMin/Max` | `0` / `20` | Moving average half-window range |
+## Appendix C: Plotly Configuration
 
-## Appendix D: Plotly Configuration
-
-Both charts use:
+Primary charts use:
 ```js
 const config = { responsive: true, displayModeBar: false };
 ```
@@ -1237,7 +1907,7 @@ Layout:
 ```js
 const layoutCommon = {
     margin: { t: 30, r: 20, l: 40, b: 35 },
-    hovermode: 'closest',
+    hovermode: 'x unified',
     showlegend: true,
     legend: { orientation: 'h', y: 1.15, x: 1, xanchor: 'right', font: { family: 'Inter, sans-serif', size: 11, color: fontColor } },
     plot_bgcolor: 'transparent',
@@ -1247,3 +1917,34 @@ const layoutCommon = {
     hoverlabel: { bgcolor: isDarkMode ? '#1e293b' : '#ffffff', font: { color: isDarkMode ? '#f8fafc' : '#0f172a' }, bordercolor: gridColor }
 };
 ```
+
+Additional charts (altitude, lateral G, longitudinal G) follow the same configuration with different `yaxis.title`.
+
+## Appendix D: VideoElement Object Structure
+
+```js
+{
+    lapIndex: number,       // Index into lapsData
+    element: HTMLVideoElement,  // The <video> DOM node
+    lapData: Lap,           // Reference to lapsData[lapIndex]
+    lastIndex: number       // Last looked-up index for binary-search optimization (currently linear scan)
+}
+```
+**Note:** With the single-primary-player refactor, only one `VideoElement` is actively synced at a time. The rest remain paused at their last position.
+
+## Appendix E: Playback Constants
+
+| Constant | Value | Notes |
+|---|---|---|
+| `distanceSimSpeed` | `25.0` m/s | ≈ 90 km/h. Used in distance mode to advance scrubber. Hardcoded. |
+| `baseSpeed` | `1.0` — selectable: 0.25, 0.5, 1.0, 2.0, 4.0, 8.0 | Multiplier for playback speed |
+| `stepFrame delta` | `0.04` seconds | ≈ 25 fps interval |
+| `frameSeek threshold (dist)` | `0.15` seconds | If video drift > 0.15s in distance mode, force seek |
+| `frameSeek threshold (time)` | `0.35` seconds | If video drift > 0.35s in time mode, force seek |
+| `dtCap` | `0.1` seconds | Maximum allowed delta time per frame (prevents tab-switch jumps) |
+| `minLapSplitGap` | `50` points | Minimum points between gate crossings to form a lap |
+| `minTrailingLapSize` | `10` points | Minimum points for final trailing lap |
+| `videoSizeMin/Max` | `200` / `800` pixels | Video card width range |
+| `smoothingWindowMin/Max` | `0` / `20` | Moving average half-window range |
+| `bookmarkMaxCount` | `50` | Maximum bookmarks per session |
+| `toastAutoDismissMs` | `4000` / `8000` | Auto-dismiss time for success/info (4s) and error/warning (8s) |
