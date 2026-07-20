@@ -263,9 +263,8 @@
                         <button id="btn-recenter" class="map-btn" title="Recenter map to fit all data"><i class="ph ph-crosshair text-xs"></i></button>
                         <button id="btn-set-gate" class="map-btn" title="Click 2 points on map to set Start/Finish line"><i class="ph ph-flag-checkered text-xs"></i> S/F</button>
                         <button id="btn-reset-gate" class="map-btn" title="Reset gate"><i class="ph ph-x-circle text-xs"></i> Reset</button>
-                        <button id="btn-set-s1" class="map-btn" title="Set Sector 1"><span class="color-dot" style="background:#3b82f6"></span> S1</button>
-                        <button id="btn-set-s2" class="map-btn" title="Set Sector 2"><span class="color-dot" style="background:#f97316"></span> S2</button>
-                        <button id="btn-set-s3" class="map-btn" title="Set Sector 3"><span class="color-dot" style="background:#22c55e"></span> S3</button>
+                        <button id="btn-set-s12" class="map-btn" title="Set S1/S2 boundary"><span class="color-dot" style="background:#3b82f6"></span> S1/S2</button>
+                        <button id="btn-set-s23" class="map-btn" title="Set S2/S3 boundary"><span class="color-dot" style="background:#f97316"></span> S2/S3</button>
                         <button id="btn-reset-sectors" class="map-btn" title="Reset all sector lines"><i class="ph ph-arrows-counter-clockwise text-xs"></i></button>
                     </div>
 
@@ -329,7 +328,7 @@
                 </div>
                 <div id="chart-speed-delta-container" class="chart-card">
                     <div class="chart-card-header" data-target="chart-speed-delta">
-                        <h3><i class="ph ph-arrows-left-right text-xs mr-1.5 text-brand-500"></i>Speed Delta</h3>
+                        <h3><i class="ph ph-arrows-left-right text-xs mr-1.5 text-brand-500"></i>Speed Delta vs Distance</h3>
                         <i class="ph ph-caret-up text-gray-600 text-sm"></i>
                     </div>
                     <div class="chart-card-body" id="chart-speed-delta"></div>
@@ -528,8 +527,8 @@
         let undoState = null;
         let gateUndoState = null;
         let speedHeatmapActive = false;
-        let sectorLines = { s1: null, s2: null, s3: null };
-        let sectorPoints = { s1: [], s2: [], s3: [] };
+        let sectorLines = { s12: null, s23: null };
+        let sectorPoints = { s12: [], s23: [] };
         let drawingSector = null;
         let autoSectorLayerGroup = null;
         let telemetryCsvText = '';
@@ -814,12 +813,19 @@
         // ===================== SECTORS =====================
         function computeSectors(lap) {
             if (!lap || lap.length < 3) return null;
-            var md = lap.maxDistance; if (md <= 0) return null;
-            var t33 = md * 0.33, t66 = md * 0.66;
-            var i33 = lap.length - 1, i66 = lap.length - 1;
-            for (var i = 0; i < lap.length; i++) {
-                if (lap[i].lapDistance >= t33 && i33 === lap.length - 1) i33 = i;
-                if (lap[i].lapDistance >= t66 && i66 === lap.length - 1) i66 = i;
+            var md = lap.maxDistance;
+            var i33, i66;
+            if (lap._customS12 !== undefined && lap._customS23 !== undefined) {
+                i33 = lap._customS12;
+                i66 = lap._customS23;
+            } else {
+                if (md <= 0) return null;
+                var t33 = md * 0.33, t66 = md * 0.66;
+                i33 = lap.length - 1; i66 = lap.length - 1;
+                for (var i = 0; i < lap.length; i++) {
+                    if (lap[i].lapDistance >= t33 && i33 === lap.length - 1) i33 = i;
+                    if (lap[i].lapDistance >= t66 && i66 === lap.length - 1) i66 = i;
+                }
             }
             i33 = Math.max(1, Math.min(i33, lap.length - 1));
             i66 = Math.max(i33 + 1, Math.min(i66, lap.length - 1));
@@ -838,6 +844,39 @@
                 if (l.sectors[1] && l.sectors[1].time > 0 && l.sectors[1].time < bestSectors.s2) bestSectors.s2 = l.sectors[1].time;
                 if (l.sectors[2] && l.sectors[2].time > 0 && l.sectors[2].time < bestSectors.s3) bestSectors.s3 = l.sectors[2].time;
             }
+        }
+
+        function distToSegment(px, py, ax, ay, bx, by) {
+            var dx = bx - ax, dy = by - ay;
+            var lenSq = dx * dx + dy * dy;
+            if (lenSq === 0) return Math.sqrt((px - ax) * (px - ax) + (py - ay) * (py - ay));
+            var t = Math.max(0, Math.min(1, ((px - ax) * dx + (py - ay) * dy) / lenSq));
+            var cx = ax + t * dx, cy = ay + t * dy;
+            return Math.sqrt((px - cx) * (px - cx) + (py - cy) * (py - cy));
+        }
+
+        function applyCustomSectors() {
+            if (!lapsData || lapsData.length === 0) return;
+            var bounds = ['s12', 's23'];
+            for (var bi = 0; bi < bounds.length; bi++) {
+                var key = bounds[bi];
+                if (!sectorPoints[key] || sectorPoints[key].length < 2) continue;
+                var p1 = sectorPoints[key][0], p2 = sectorPoints[key][1];
+                for (var li = 0; li < lapsData.length; li++) {
+                    var lap = lapsData[li];
+                    var minDist = Infinity, bestIdx = 0;
+                    for (var pi = 0; pi < lap.length; pi++) {
+                        var d = distToSegment(lap[pi].lat, lap[pi].lon, p1.lat, p1.lng, p2.lat, p2.lng);
+                        if (d < minDist) { minDist = d; bestIdx = pi; }
+                    }
+                    if (key === 's12') lap._customS12 = bestIdx;
+                    else lap._customS23 = bestIdx;
+                }
+            }
+            for (var li = 0; li < lapsData.length; li++) { lapsData[li].sectors = computeSectors(lapsData[li]); }
+            computeBestSectors();
+            renderLapTower();
+            updateVisualization();
         }
 
         // ===================== REFERENCE LAP =====================
@@ -1127,14 +1166,13 @@
         function renderAutoSectors() {
             if (!autoSectorLayerGroup) return;
             autoSectorLayerGroup.clearLayers();
-            if (sectorLines.s1 || sectorLines.s2 || sectorLines.s3) return;
             if (!lapsData || lapsData.length === 0) return;
             var refLap = lapsData[referenceLapId] || lapsData[0];
             if (!refLap || !refLap.sectors) return;
             var idx12 = refLap.sectors[0].endIndex;
-            if (idx12 > 0 && idx12 < refLap.length) drawBoundaryLine(refLap, idx12, '#3b82f6', 'S1/S2');
+            if (!sectorLines.s12 && drawingSector !== 's12' && idx12 > 0 && idx12 < refLap.length) drawBoundaryLine(refLap, idx12, '#3b82f6', 'S1/S2');
             var idx23 = refLap.sectors[1].endIndex;
-            if (idx23 > 0 && idx23 < refLap.length && idx23 !== idx12) drawBoundaryLine(refLap, idx23, '#f97316', 'S2/S3');
+            if (!sectorLines.s23 && drawingSector !== 's23' && idx23 > 0 && idx23 < refLap.length && idx23 !== idx12) drawBoundaryLine(refLap, idx23, '#f97316', 'S2/S3');
         }
 
         function handleMapMouseMove(e) {
@@ -1144,7 +1182,7 @@
             }
             if (drawingSector && sectorPoints[drawingSector].length === 1) {
                 if (ghostLayer) map.removeLayer(ghostLayer);
-                var sc = drawingSector === 's1' ? '#3b82f6' : drawingSector === 's2' ? '#f97316' : '#22c55e';
+                var sc = drawingSector === 's12' ? '#3b82f6' : '#f97316';
                 ghostLayer = L.polyline([sectorPoints[drawingSector][0], e.latlng], { color: sc, weight: 3, dashArray: '6,6', opacity: 0.8 }).addTo(map);
             }
         }
@@ -1171,12 +1209,13 @@
                     sectorPoints[drawingSector].push(e.latlng);
                 } else if (sectorPoints[drawingSector].length === 1) {
                     sectorPoints[drawingSector].push(e.latlng);
-                    var sc = drawingSector === 's1' ? '#3b82f6' : drawingSector === 's2' ? '#f97316' : '#22c55e';
+                    var sc = drawingSector === 's12' ? '#3b82f6' : '#f97316';
                     if (ghostLayer) { map.removeLayer(ghostLayer); ghostLayer = null; }
                     if (sectorLines[drawingSector]) map.removeLayer(sectorLines[drawingSector]);
                     sectorLines[drawingSector] = L.polyline([sectorPoints[drawingSector][0], sectorPoints[drawingSector][1]], { color: sc, weight: 3, dashArray: '8,8', opacity: 0.9 }).addTo(map);
                     drawingSector = null;
-                    if (autoSectorLayerGroup) autoSectorLayerGroup.clearLayers();
+                    document.getElementById('gate-badge').classList.add('hidden');
+                    applyCustomSectors();
                 }
                 return;
             }
@@ -1225,7 +1264,8 @@
 
         function clearSectorLines() {
             for (var sk in sectorLines) { if (sectorLines[sk]) { map.removeLayer(sectorLines[sk]); sectorLines[sk] = null; } }
-            sectorPoints = { s1: [], s2: [], s3: [] };
+            sectorPoints = { s12: [], s23: [] };
+            for (var li = 0; li < lapsData.length; li++) { delete lapsData[li]._customS12; delete lapsData[li]._customS23; }
         }
 
         // ===================== GATE/SECTOR BUTTONS =====================
@@ -1254,8 +1294,8 @@
             isDrawingGate = false; drawingSector = sector;
             if (ghostLayer) { map.removeLayer(ghostLayer); ghostLayer = null; }
             sectorPoints[sector] = [];
-            if (autoSectorLayerGroup) autoSectorLayerGroup.clearLayers();
-            var names = { s1: 'Sector 1 (blue)', s2: 'Sector 2 (orange)', s3: 'Sector 3 (green)' };
+            renderAutoSectors();
+            var names = { s12: 'S1/S2 boundary (blue)', s23: 'S2/S3 boundary (orange)' };
             document.getElementById('gate-badge').classList.remove('hidden');
             document.getElementById('gate-badge').innerHTML = '<div class="bg-gray-800/90 text-white px-4 py-2 rounded-lg text-sm font-bold shadow-lg whitespace-nowrap border border-gray-700">' + names[sector] + ' — Click START point on map</div>';
         }
@@ -1264,8 +1304,11 @@
             clearSectorLines();
             drawingSector = null;
             document.getElementById('gate-badge').classList.add('hidden');
+            for (var li = 0; li < lapsData.length; li++) { lapsData[li].sectors = computeSectors(lapsData[li]); }
+            computeBestSectors();
             renderAutoSectors();
-            showToast('info', 'Sector lines cleared.');
+            updateVisualization();
+            showToast('info', 'Sector boundaries reset to auto-detected.');
         }
 
         // ===================== CHARTS =====================
@@ -1960,9 +2003,8 @@
             // Gate / Sector buttons
             document.getElementById('btn-set-gate').addEventListener('click', setGateMode);
             document.getElementById('btn-reset-gate').addEventListener('click', resetGate);
-            document.getElementById('btn-set-s1').addEventListener('click', function() { setSectorMode('s1'); });
-            document.getElementById('btn-set-s2').addEventListener('click', function() { setSectorMode('s2'); });
-            document.getElementById('btn-set-s3').addEventListener('click', function() { setSectorMode('s3'); });
+            document.getElementById('btn-set-s12').addEventListener('click', function() { setSectorMode('s12'); });
+            document.getElementById('btn-set-s23').addEventListener('click', function() { setSectorMode('s23'); });
             document.getElementById('btn-reset-sectors').addEventListener('click', resetSectors);
             document.getElementById('btn-recenter').addEventListener('click', recenterMap);
 
