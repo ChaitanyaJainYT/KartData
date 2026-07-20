@@ -260,6 +260,7 @@
 
                     <!-- Map overlay buttons -->
                     <div class="map-btn-group">
+                        <button id="btn-recenter" class="map-btn" title="Recenter map to fit all data"><i class="ph ph-crosshair text-xs"></i></button>
                         <button id="btn-set-gate" class="map-btn" title="Click 2 points on map to set Start/Finish line"><i class="ph ph-flag-checkered text-xs"></i> S/F</button>
                         <button id="btn-reset-gate" class="map-btn" title="Reset gate"><i class="ph ph-x-circle text-xs"></i> Reset</button>
                         <button id="btn-set-s1" class="map-btn" title="Set Sector 1"><span class="color-dot" style="background:#3b82f6"></span> S1</button>
@@ -530,6 +531,7 @@
         let sectorLines = { s1: null, s2: null, s3: null };
         let sectorPoints = { s1: [], s2: [], s3: [] };
         let drawingSector = null;
+        let autoSectorLayerGroup = null;
         let telemetryCsvText = '';
         let telemetryDownloadName = 'telemetry.csv';
         let telemetrySource = null;
@@ -554,6 +556,23 @@
                       Math.sin(dLon / 2) * Math.sin(dLon / 2);
             const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
             return R * c;
+        }
+
+        function bearing(lat1, lon1, lat2, lon2) {
+            var dLon = deg2rad(lon2 - lon1);
+            var y = Math.sin(dLon) * Math.cos(deg2rad(lat2));
+            var x = Math.cos(deg2rad(lat1)) * Math.sin(deg2rad(lat2)) - Math.sin(deg2rad(lat1)) * Math.cos(deg2rad(lat2)) * Math.cos(dLon);
+            return (Math.atan2(y, x) * 180 / Math.PI + 360) % 360;
+        }
+
+        function destinationPoint(lat, lon, brngDeg, distM) {
+            var R = 6371000;
+            var brng = deg2rad(brngDeg);
+            var lat1 = deg2rad(lat);
+            var lon1 = deg2rad(lon);
+            var lat2 = Math.asin(Math.sin(lat1) * Math.cos(distM / R) + Math.cos(lat1) * Math.sin(distM / R) * Math.cos(brng));
+            var lon2 = lon1 + Math.atan2(Math.sin(brng) * Math.sin(distM / R) * Math.cos(lat1), Math.cos(distM / R) - Math.sin(lat1) * Math.sin(lat2));
+            return { lat: lat2 * 180 / Math.PI, lon: lon2 * 180 / Math.PI };
         }
 
         function formatTime(seconds) {
@@ -1015,6 +1034,7 @@
                 attribution: '&copy; OSM, &copy; CARTO', subdomains: 'abcd', maxZoom: 22
             }).addTo(map);
             polylineLayerGroup = L.layerGroup().addTo(map);
+            autoSectorLayerGroup = L.layerGroup().addTo(map);
             map.on('mousemove', handleMapMouseMove);
             map.on('click', handleMapClick);
             // GPS coords display
@@ -1079,6 +1099,42 @@
             }
             // Render sector lines
             for (var sk in sectorLines) { if (sectorLines[sk]) polylineLayerGroup.addLayer(sectorLines[sk]); }
+            renderAutoSectors();
+        }
+
+        function drawBoundaryLine(lap, idx, color, label) {
+            var p = lap[idx];
+            var pPrev = idx > 0 ? lap[idx - 1] : p;
+            var pNext = idx < lap.length - 1 ? lap[idx + 1] : p;
+            var brg = bearing(pPrev.lat, pPrev.lon, pNext.lat, pNext.lon);
+            var perp = (brg + 90) % 360;
+            var lineLen = 12;
+            var e1 = destinationPoint(p.lat, p.lon, perp, lineLen);
+            var e2 = destinationPoint(p.lat, p.lon, (perp + 180) % 360, lineLen);
+            autoSectorLayerGroup.addLayer(L.polyline([[e1.lat, e1.lon], [e2.lat, e2.lon]], {
+                color: color, weight: 3, dashArray: '6,6', opacity: 0.9
+            }));
+            var labelPos = destinationPoint(p.lat, p.lon, perp, lineLen + 6);
+            autoSectorLayerGroup.addLayer(L.marker([labelPos.lat, labelPos.lon], {
+                icon: L.divIcon({
+                    className: '',
+                    html: '<span style="color:' + color + ';font-size:10px;font-weight:bold;font-family:JetBrains Mono,monospace;text-shadow:0 0 4px rgba(0,0,0,0.95),0 0 8px rgba(0,0,0,0.95);white-space:nowrap">' + label + '</span>',
+                    iconSize: [0, 0], iconAnchor: [0, 0]
+                }), interactive: false
+            }));
+        }
+
+        function renderAutoSectors() {
+            if (!autoSectorLayerGroup) return;
+            autoSectorLayerGroup.clearLayers();
+            if (sectorLines.s1 || sectorLines.s2 || sectorLines.s3) return;
+            if (!lapsData || lapsData.length === 0) return;
+            var refLap = lapsData[referenceLapId] || lapsData[0];
+            if (!refLap || !refLap.sectors) return;
+            var idx12 = refLap.sectors[0].endIndex;
+            if (idx12 > 0 && idx12 < refLap.length) drawBoundaryLine(refLap, idx12, '#3b82f6', 'S1/S2');
+            var idx23 = refLap.sectors[1].endIndex;
+            if (idx23 > 0 && idx23 < refLap.length && idx23 !== idx12) drawBoundaryLine(refLap, idx23, '#f97316', 'S2/S3');
         }
 
         function handleMapMouseMove(e) {
@@ -1120,6 +1176,7 @@
                     if (sectorLines[drawingSector]) map.removeLayer(sectorLines[drawingSector]);
                     sectorLines[drawingSector] = L.polyline([sectorPoints[drawingSector][0], sectorPoints[drawingSector][1]], { color: sc, weight: 3, dashArray: '8,8', opacity: 0.9 }).addTo(map);
                     drawingSector = null;
+                    if (autoSectorLayerGroup) autoSectorLayerGroup.clearLayers();
                 }
                 return;
             }
@@ -1159,6 +1216,13 @@
             }
         }
 
+        function recenterMap() {
+            if (!map || rawData.length === 0) return;
+            var b = [];
+            for (var i = 0; i < rawData.length; i++) b.push([rawData[i].lat, rawData[i].lon]);
+            map.fitBounds(b, { padding: [30, 30] });
+        }
+
         function clearSectorLines() {
             for (var sk in sectorLines) { if (sectorLines[sk]) { map.removeLayer(sectorLines[sk]); sectorLines[sk] = null; } }
             sectorPoints = { s1: [], s2: [], s3: [] };
@@ -1190,6 +1254,7 @@
             isDrawingGate = false; drawingSector = sector;
             if (ghostLayer) { map.removeLayer(ghostLayer); ghostLayer = null; }
             sectorPoints[sector] = [];
+            if (autoSectorLayerGroup) autoSectorLayerGroup.clearLayers();
             var names = { s1: 'Sector 1 (blue)', s2: 'Sector 2 (orange)', s3: 'Sector 3 (green)' };
             document.getElementById('gate-badge').classList.remove('hidden');
             document.getElementById('gate-badge').innerHTML = '<div class="bg-gray-800/90 text-white px-4 py-2 rounded-lg text-sm font-bold shadow-lg whitespace-nowrap border border-gray-700">' + names[sector] + ' — Click START point on map</div>';
@@ -1199,6 +1264,7 @@
             clearSectorLines();
             drawingSector = null;
             document.getElementById('gate-badge').classList.add('hidden');
+            renderAutoSectors();
             showToast('info', 'Sector lines cleared.');
         }
 
@@ -1898,6 +1964,7 @@
             document.getElementById('btn-set-s2').addEventListener('click', function() { setSectorMode('s2'); });
             document.getElementById('btn-set-s3').addEventListener('click', function() { setSectorMode('s3'); });
             document.getElementById('btn-reset-sectors').addEventListener('click', resetSectors);
+            document.getElementById('btn-recenter').addEventListener('click', recenterMap);
 
             // Settings
             document.getElementById('settings-gear').addEventListener('click', function() {
