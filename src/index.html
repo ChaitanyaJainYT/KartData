@@ -333,19 +333,19 @@
                     </div>
                     <div class="chart-card-body" id="chart-speed-delta"></div>
                 </div>
-                <div id="chart-time-delta-container" class="chart-card">
-                    <div class="chart-card-header" data-target="chart-time-delta">
-                        <h3><i class="ph ph-timer text-xs mr-1.5 text-brand-500"></i>Time Delta</h3>
-                        <i class="ph ph-caret-up text-gray-600 text-sm"></i>
-                    </div>
-                    <div class="chart-card-body" id="chart-time-delta"></div>
-                </div>
                 <div id="chart-speed-delta-time-container" class="chart-card">
                     <div class="chart-card-header" data-target="chart-speed-delta-time">
                         <h3><i class="ph ph-clock-counter-clockwise text-xs mr-1.5 text-brand-500"></i>Speed Delta vs Time</h3>
                         <i class="ph ph-caret-up text-gray-600 text-sm"></i>
                     </div>
                     <div class="chart-card-body" id="chart-speed-delta-time"></div>
+                </div>
+                <div id="chart-time-delta-container" class="chart-card">
+                    <div class="chart-card-header" data-target="chart-time-delta">
+                        <h3><i class="ph ph-timer text-xs mr-1.5 text-brand-500"></i>Time Delta</h3>
+                        <i class="ph ph-caret-up text-gray-600 text-sm"></i>
+                    </div>
+                    <div class="chart-card-body" id="chart-time-delta"></div>
                 </div>
                 <div id="chart-dist-delta-container" class="chart-card">
                     <div class="chart-card-header" data-target="chart-dist-delta">
@@ -1293,6 +1293,8 @@
                     if (item.index === referenceLapId) return;
                     tracesSpeedDelta.push(buildDeltaTrace(item.lap, item.index, refLap, 'lapDistance', 'speed', 'Lap '));
                 });
+                var refColor = COLORS[referenceLapId % COLORS.length];
+                tracesSpeedDelta.push({ x: [0, refLap[refLap.length-1].lapDistance], y: [0, 0], mode: 'lines', name: 'Reference', line: { width: 1.5, color: refColor }, hoverinfo: 'none', showlegend: true });
             }
             tracesSpeedDelta.push({ x: [], y: [], mode: 'markers', type: 'scatter', marker: { color: '#facc15', size: 10, line: { color: '#fff', width: 2 } }, hoverinfo: 'none', showlegend: false });
             var sdLayout = { ...layoutDelta, xaxis: { title: { text: 'Distance (m)', font: { size: 9, color: fontColor } }, gridcolor: gridColor, tickfont: { size: 9, color: fontColor } }, yaxis: { ...layoutDelta.yaxis, title: { text: 'Δ Speed (km/h)', font: { size: 9, color: fontColor } } } };
@@ -1326,6 +1328,8 @@
                         hovertemplate: '%{y:.1f}<extra>Lap ' + (item.index + 1) + '</extra>'
                     });
                 });
+                var refColor = COLORS[referenceLapId % COLORS.length];
+                tracesSpeedDeltaTime.push({ x: [0, refLap[refLap.length-1].time - refLap[0].time], y: [0, 0], mode: 'lines', name: 'Reference', line: { width: 1.5, color: refColor }, hoverinfo: 'none', showlegend: true });
             }
             tracesSpeedDeltaTime.push({ x: [], y: [], mode: 'markers', type: 'scatter', marker: { color: '#facc15', size: 10, line: { color: '#fff', width: 2 } }, hoverinfo: 'none', showlegend: false });
             Plotly.newPlot('chart-speed-delta-time', tracesSpeedDeltaTime, { ...layoutDelta, xaxis: { title: { text: 'Time (s)', font: { size: 9, color: fontColor } }, gridcolor: gridColor, tickfont: { size: 9, color: fontColor } }, yaxis: { ...layoutDelta.yaxis, title: { text: 'Δ Speed (km/h)', font: { size: 9, color: fontColor } } } }, config);
@@ -1352,12 +1356,15 @@
                         }
                         delta.push(dt);
                     }
+                    delta = smoothData(delta, currentSmoothing);
                     tracesTimeDelta.push({
                         x: lap.map(function(d) { return d.lapDistance; }), y: delta, mode: 'lines', name: 'Lap ' + (item.index + 1),
                         line: { width: 1.8, color: color },
                         hovertemplate: '%{y:.3f}s<extra>Lap ' + (item.index + 1) + '</extra>'
                     });
                 });
+                var refColor = COLORS[referenceLapId % COLORS.length];
+                tracesTimeDelta.push({ x: [0, refLap[refLap.length-1].lapDistance], y: [0, 0], mode: 'lines', name: 'Reference', line: { width: 1.5, color: refColor }, hoverinfo: 'none', showlegend: true });
             }
             tracesTimeDelta.push({ x: [], y: [], mode: 'markers', type: 'scatter', marker: { color: '#facc15', size: 10, line: { color: '#fff', width: 2 } }, hoverinfo: 'none', showlegend: false });
             Plotly.newPlot('chart-time-delta', tracesTimeDelta, { ...layoutDelta, xaxis: { title: { text: 'Distance (m)', font: { size: 9, color: fontColor } }, gridcolor: gridColor, tickfont: { size: 9, color: fontColor } }, yaxis: { ...layoutDelta.yaxis, title: { text: 'Δ Time (s)', font: { size: 9, color: fontColor } } } }, config);
@@ -1372,20 +1379,24 @@
                     var delta = [];
                     for (var i = 0; i < lap.length; i++) {
                         var match = null, md = Infinity;
+                        var t = lap[i].time - lapStart;
                         for (var j = 0; j < refLap.length; j++) {
-                            var dd = Math.abs(lap[i].time - refLap[j].time);
+                            var dd = Math.abs(t - (refLap[j].time - refLap[0].time));
                             if (dd < md) { md = dd; match = j; }
                         }
                         var dd2 = 0;
                         if (match !== null) dd2 = lap[i].lapDistance - refLap[match].lapDistance;
                         delta.push(dd2);
                     }
+                    delta = smoothData(delta, currentSmoothing);
                     tracesDistDelta.push({
                         x: lap.map(function(d) { return d.time - lapStart; }), y: delta, mode: 'lines', name: 'Lap ' + (item.index + 1),
                         line: { width: 1.8, color: color },
                         hovertemplate: '%{y:.1f}m<extra>Lap ' + (item.index + 1) + '</extra>'
                     });
                 });
+                var refColor = COLORS[referenceLapId % COLORS.length];
+                tracesDistDelta.push({ x: [0, refLap[refLap.length-1].time - refLap[0].time], y: [0, 0], mode: 'lines', name: 'Reference', line: { width: 1.5, color: refColor }, hoverinfo: 'none', showlegend: true });
             }
             tracesDistDelta.push({ x: [], y: [], mode: 'markers', type: 'scatter', marker: { color: '#facc15', size: 10, line: { color: '#fff', width: 2 } }, hoverinfo: 'none', showlegend: false });
             Plotly.newPlot('chart-dist-delta', tracesDistDelta, { ...layoutDelta, xaxis: { title: { text: 'Time (s)', font: { size: 9, color: fontColor } }, gridcolor: gridColor, tickfont: { size: 9, color: fontColor } }, yaxis: { ...layoutDelta.yaxis, title: { text: 'Δ Distance (m)', font: { size: 9, color: fontColor } } } }, config);
@@ -1562,10 +1573,45 @@
             }
             restyleCursor('chart-speed-dist', cursorDistX, cursorY);
             restyleCursor('chart-speed-time', cursorTimeX, cursorY);
-            restyleCursor('chart-speed-delta', cursorDistX, cursorY.map(function() { return 0; }));
-            restyleCursor('chart-speed-delta-time', cursorTimeX, cursorY.map(function() { return 0; }));
-            restyleCursor('chart-time-delta', cursorDistX, cursorY.map(function() { return 0; }));
-            restyleCursor('chart-dist-delta', cursorTimeX, cursorY.map(function() { return 0; }));
+            // Delta chart cursors: compute actual delta values against reference lap
+            var refLapData = referenceLapId >= 0 && lapsData[referenceLapId] ? lapsData[referenceLapId] : null;
+            if (refLapData) {
+                var speedDeltaByDist = [], speedDeltaByTime = [], timeDeltaByDist = [], distDeltaByTime = [];
+                lapsToRender.forEach(function(item, ci) {
+                    var lap = item.lap, index = item.index, lapStart = lap[0].time;
+                    var pt = (playbackState.mode === 'distance')
+                        ? lap.find(function(p) { return p.lapDistance >= playbackState.currentValue; })
+                        : lap.find(function(p) { return (p.time - lapStart) >= playbackState.currentValue; });
+                    if (!pt) pt = lap[lap.length - 1];
+                    // Speed Delta (vs distance)
+                    var refByDist = null, md = Infinity;
+                    for (var j = 0; j < refLapData.length; j++) { var dd = Math.abs(pt.lapDistance - refLapData[j].lapDistance); if (dd < md) { md = dd; refByDist = j; } }
+                    speedDeltaByDist.push(refByDist !== null ? pt.speed - refLapData[refByDist].speed : 0);
+                    // Speed Delta vs Time
+                    var cursorT = pt.time - lapStart;
+                    var refByTime = null; md = Infinity;
+                    for (var j = 0; j < refLapData.length; j++) { var dd = Math.abs(cursorT - (refLapData[j].time - refLapData[0].time)); if (dd < md) { md = dd; refByTime = j; } }
+                    speedDeltaByTime.push(refByTime !== null ? pt.speed - refLapData[refByTime].speed : 0);
+                    // Time Delta
+                    var refT = null; md = Infinity;
+                    for (var j = 0; j < refLapData.length; j++) { var dd = Math.abs(pt.lapDistance - refLapData[j].lapDistance); if (dd < md) { md = dd; refByDist = j; } }
+                    timeDeltaByDist.push(refByDist !== null ? (pt.time - lapStart) - (refLapData[refByDist].time - refLapData[0].time) : 0);
+                    // Distance Delta
+                    var refD = null; md = Infinity;
+                    var cursorT = pt.time - lapStart;
+                    for (var j = 0; j < refLapData.length; j++) { var dd = Math.abs(cursorT - (refLapData[j].time - refLapData[0].time)); if (dd < md) { md = dd; refD = j; } }
+                    distDeltaByTime.push(refD !== null ? pt.lapDistance - refLapData[refD].lapDistance : 0);
+                });
+                restyleCursor('chart-speed-delta', cursorDistX, speedDeltaByDist);
+                restyleCursor('chart-speed-delta-time', cursorTimeX, speedDeltaByTime);
+                restyleCursor('chart-time-delta', cursorDistX, timeDeltaByDist);
+                restyleCursor('chart-dist-delta', cursorTimeX, distDeltaByTime);
+            } else {
+                restyleCursor('chart-speed-delta', cursorDistX, cursorY.map(function() { return 0; }));
+                restyleCursor('chart-speed-delta-time', cursorTimeX, cursorY.map(function() { return 0; }));
+                restyleCursor('chart-time-delta', cursorDistX, cursorY.map(function() { return 0; }));
+                restyleCursor('chart-dist-delta', cursorTimeX, cursorY.map(function() { return 0; }));
+            }
 
             var val = playbackState.currentValue;
             document.getElementById('scrubber-current').textContent = playbackState.mode === 'distance' ? Math.round(val) + ' m' : formatTime(val);
